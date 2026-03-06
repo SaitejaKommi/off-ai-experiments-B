@@ -4,7 +4,7 @@ import json
 import urllib.parse
 import urllib.request
 
-from utils.product_helpers import normalise_grade, category_slug
+from utils.product_helpers import normalise_grade, category_slug, extract_nutriment
 
 _GRADE_ORDER = {"a": 0, "b": 1, "c": 2, "d": 3, "e": 4}
 
@@ -66,12 +66,8 @@ def get_alternatives(product: dict, max_results: int = 3) -> list[dict]:
 
     current_name = (product.get("product_name") or "").strip().lower()
     current_nutrients = product.get("nutriments", {})
-    current_sugar = float(
-        current_nutrients.get("sugars_100g") or current_nutrients.get("sugars") or 0
-    )
-    current_fat = float(
-        current_nutrients.get("fat_100g") or current_nutrients.get("fat") or 0
-    )
+    current_sugar = extract_nutriment(current_nutrients, "sugars")
+    current_fat = extract_nutriment(current_nutrients, "fat")
 
     alternatives = []
     for item in data.get("products", []):
@@ -85,12 +81,8 @@ def get_alternatives(product: dict, max_results: int = 3) -> list[dict]:
             continue
 
         alt_nutrients = item.get("nutriments", {})
-        alt_sugar = float(
-            alt_nutrients.get("sugars_100g") or alt_nutrients.get("sugars") or 0
-        )
-        alt_fat = float(
-            alt_nutrients.get("fat_100g") or alt_nutrients.get("fat") or 0
-        )
+        alt_sugar = extract_nutriment(alt_nutrients, "sugars")
+        alt_fat = extract_nutriment(alt_nutrients, "fat")
 
         reasons = []
         if grade:

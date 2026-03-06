@@ -48,9 +48,10 @@ def extract_additives(product: dict) -> list[str]:
 
 
 def normalise_grade(grade: Optional[str]) -> Optional[str]:
-    """Lowercase and strip a NutriScore grade, return None if absent."""
+    """Lowercase and strip a NutriScore grade, return None if absent or empty."""
     if grade:
-        return grade.lower().strip()
+        stripped = grade.lower().strip()
+        return stripped if stripped else None
     return None
 
 

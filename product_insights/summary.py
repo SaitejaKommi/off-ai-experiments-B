@@ -1,6 +1,6 @@
 """Generate a plain-language product summary."""
 
-from utils.product_helpers import normalise_grade, safe_int, extract_allergens
+from utils.product_helpers import normalise_grade, safe_int, extract_allergens, extract_nutriment
 from utils.nutrition_rules import NUTRISCORE_DESCRIPTIONS, NOVA_DESCRIPTIONS
 
 
@@ -48,9 +48,9 @@ def generate(product: dict) -> str:
 
     # Nutriment highlights
     nutriments = product.get("nutriments", {})
-    fat = float(nutriments.get("fat_100g") or nutriments.get("fat") or 0)
-    sugars = float(nutriments.get("sugars_100g") or nutriments.get("sugars") or 0)
-    protein = float(nutriments.get("proteins_100g") or nutriments.get("proteins") or 0)
+    fat = extract_nutriment(nutriments, "fat")
+    sugars = extract_nutriment(nutriments, "sugars")
+    protein = extract_nutriment(nutriments, "proteins")
 
     highlights = []
     if fat > 20:
