@@ -2,6 +2,12 @@
 
 from utils.product_helpers import normalise_grade, safe_int, extract_allergens, extract_nutriment
 from utils.nutrition_rules import NUTRISCORE_DESCRIPTIONS, NOVA_DESCRIPTIONS
+from product_insights.llm_config import LLMConfig
+
+try:
+    from product_insights.llm_client import get_llm_client
+except ImportError:
+    get_llm_client = None
 
 
 def generate(product: dict) -> str:
@@ -17,6 +23,48 @@ def generate(product: dict) -> str:
     str
         A multi-sentence summary of the product.
     """
+    # Try LLM-generated summary first
+    llm_summary = _generate_llm_summary(product)
+    if llm_summary:
+        return llm_summary
+    
+    if LLMConfig.LLM_FALLBACK_TO_RULES:
+        return _generate_template_summary(product)
+
+    return "LLM summary unavailable. Check API key, provider, or quota."
+
+
+def _generate_llm_summary(product: dict) -> str:
+    """Generate summary using LLM."""
+    if get_llm_client is None:
+        return ""
+    
+    try:
+        client = get_llm_client()
+        if not client:
+            return ""
+        
+        product_name = product.get("product_name") or "This product"
+        categories_tags = product.get("categories_tags", [])
+        category = categories_tags[-1].split(":", 1)[-1] if categories_tags else "food product"
+        
+        nutriscore = normalise_grade(product.get("nutriscore_grade"))
+        nova = safe_int(product.get("nova_group"), 0)
+        
+        summary = client.get_product_summary(
+            product_name=product_name,
+            category=category,
+            nutriscore=nutriscore.upper() if nutriscore else None,
+            nova_group=nova if nova > 0 else None
+        )
+        
+        return summary if summary else ""
+    except Exception:
+        return ""
+
+
+def _generate_template_summary(product: dict) -> str:
+    """Generate summary using templates (fallback)."""
     name = product.get("product_name") or "This product"
     grade = normalise_grade(product.get("nutriscore_grade"))
     nova = safe_int(product.get("nova_group"), 0)

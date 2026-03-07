@@ -9,7 +9,7 @@ from utils.product_helpers import normalise_grade, extract_nutriment
 _GRADE_ORDER = {"a": 0, "b": 1, "c": 2, "d": 3, "e": 4}
 
 _SEARCH_URL = (
-    "https://world.openfoodfacts.org/cgi/search.pl"
+    "https://ca-en.openfoodfacts.org/cgi/search.pl"
     "?action=process"
     "&tagtype_0=categories"
     "&tag_contains_0=contains"

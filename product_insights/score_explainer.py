@@ -2,10 +2,65 @@
 
 from utils.nutrition_rules import NUTRISCORE_DESCRIPTIONS, NOVA_DESCRIPTIONS
 from utils.product_helpers import normalise_grade, safe_int, extract_nutriment
+from product_insights.llm_config import LLMConfig
+
+try:
+    from product_insights.llm_client import get_llm_client
+except ImportError:
+    get_llm_client = None
 
 
 def explain_nutriscore(product: dict) -> str:
     """Return a human-readable explanation of the product's NutriScore."""
+    # Try LLM-enhanced explanation first
+    llm_explanation = _explain_nutriscore_llm(product)
+    if llm_explanation:
+        return llm_explanation
+    
+    if LLMConfig.LLM_FALLBACK_TO_RULES:
+        return _explain_nutriscore_template(product)
+
+    return "NutriScore explanation unavailable (LLM response not available)."
+
+
+def _explain_nutriscore_llm(product: dict) -> str:
+    """Get LLM-enhanced NutriScore explanation."""
+    if get_llm_client is None:
+        return ""
+    
+    try:
+        client = get_llm_client()
+        if not client:
+            return ""
+        
+        grade = normalise_grade(product.get("nutriscore_grade"))
+        if not grade or grade not in NUTRISCORE_DESCRIPTIONS:
+            return ""
+        
+        product_name = product.get("product_name", "product")
+        nutriments = product.get("nutriments", {})
+        
+        prompt = f"""Explain the NutriScore grade for this product in 2 sentences.
+
+Product: {product_name}
+NutriScore: {grade.upper()}
+Nutrients per 100g:
+- Fat: {extract_nutriment(nutriments, 'fat'):.1f}g
+- Saturated Fat: {extract_nutriment(nutriments, 'saturated-fat'):.1f}g
+- Sugar: {extract_nutriment(nutriments, 'sugars'):.1f}g
+- Protein: {extract_nutriment(nutriments, 'proteins'):.1f}g
+- Fiber: {extract_nutriment(nutriments, 'fiber'):.1f}g
+
+Write a concise, helpful explanation of what this grade means and why this product received it. Focus on the key nutrients that influenced the score. Be specific and actionable."""
+        
+        response = client._call_llm(prompt)
+        return response.strip() if response else ""
+    except Exception:
+        return ""
+
+
+def _explain_nutriscore_template(product: dict) -> str:
+    """Template-based NutriScore explanation (fallback)."""
     grade = normalise_grade(product.get("nutriscore_grade"))
     if not grade or grade not in NUTRISCORE_DESCRIPTIONS:
         return "NutriScore is not available for this product."
@@ -40,6 +95,53 @@ def explain_nutriscore(product: dict) -> str:
 
 def explain_nova(product: dict) -> str:
     """Return a human-readable explanation of the product's NOVA group."""
+    # Try LLM-enhanced explanation first
+    llm_explanation = _explain_nova_llm(product)
+    if llm_explanation:
+        return llm_explanation
+    
+    if LLMConfig.LLM_FALLBACK_TO_RULES:
+        return _explain_nova_template(product)
+
+    return "NOVA explanation unavailable (LLM response not available)."
+
+
+def _explain_nova_llm(product: dict) -> str:
+    """Get LLM-enhanced NOVA explanation."""
+    if get_llm_client is None:
+        return ""
+    
+    try:
+        client = get_llm_client()
+        if not client:
+            return ""
+        
+        nova = safe_int(product.get("nova_group"), 0)
+        if nova not in NOVA_DESCRIPTIONS:
+            return ""
+        
+        product_name = product.get("product_name", "product")
+        categories = product.get("categories_tags", [])
+        category = categories[-1].split(":", 1)[-1] if categories else ""
+        additives_count = len(product.get("additives_tags", []))
+        
+        prompt = f"""Explain the NOVA processing level for this product in 2 sentences.
+
+Product: {product_name}
+Category: {category}
+NOVA Group: {nova} ({NOVA_DESCRIPTIONS[nova]})
+Additives: {additives_count}
+
+Explain what this NOVA group means for this specific product type and why consumers should care. Be practical and balanced—avoid alarmism but be honest about processing concerns."""
+        
+        response = client._call_llm(prompt)
+        return response.strip() if response else ""
+    except Exception:
+        return ""
+
+
+def _explain_nova_template(product: dict) -> str:
+    """Template-based NOVA explanation (fallback)."""
     nova = safe_int(product.get("nova_group"), 0)
     if nova not in NOVA_DESCRIPTIONS:
         return "NOVA processing level is not available for this product."

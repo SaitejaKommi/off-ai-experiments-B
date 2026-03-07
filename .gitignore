@@ -15,6 +15,11 @@ build/
 venv/
 env/
 
+# Secrets / local env
+.env
+.env.local
+.env.*.local
+
 # Pytest
 .pytest_cache/
 .coverage

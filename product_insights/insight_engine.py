@@ -12,6 +12,11 @@ from utils.nutrition_rules import (
 )
 from utils.product_helpers import extract_nutriment, safe_int, normalise_grade
 
+try:
+    from product_insights.llm_client import get_llm_client
+except ImportError:
+    get_llm_client = None
+
 
 def analyse(product: dict) -> dict:
     """Return a dict with ``risk_indicators`` and ``positive_indicators`` lists.
@@ -79,7 +84,83 @@ def analyse(product: dict) -> dict:
     if nutriscore in ("a", "b"):
         positive.append(f"Good NutriScore ({nutriscore.upper()})")
 
+    # Enhance with LLM contextual insights if available
+    llm_insights = _get_llm_insights(product, risk, positive, nutriments)
+    if llm_insights:
+        risk.extend(llm_insights.get("enhanced_risks", []))
+        positive.extend(llm_insights.get("enhanced_positives", []))
+
     return {
         "risk_indicators": risk,
         "positive_indicators": positive,
     }
+
+
+def _get_llm_insights(product: dict, existing_risks: list, existing_positives: list, nutriments: dict) -> dict:
+    """Get LLM-enhanced contextual insights."""
+    if get_llm_client is None:
+        return {}
+    
+    try:
+        client = get_llm_client()
+        if not client:
+            return {}
+        
+        product_name = product.get("product_name") or "product"
+        categories_tags = product.get("categories_tags", [])
+        category = categories_tags[-1].split(":", 1)[-1] if categories_tags else "food"
+        
+        # Build context for LLM
+        nutrients_info = {
+            "fat": extract_nutriment(nutriments, "fat"),
+            "sugar": extract_nutriment(nutriments, "sugars"),
+            "salt": extract_nutriment(nutriments, "salt"),
+            "protein": extract_nutriment(nutriments, "proteins"),
+            "fiber": extract_nutriment(nutriments, "fiber"),
+            "saturated_fat": extract_nutriment(nutriments, "saturated-fat"),
+        }
+        
+        prompt = f"""Analyze this food product and provide 1-2 additional contextual insights.
+
+Product: {product_name}
+Category: {category}
+Nutrients (per 100g): {nutrients_info}
+
+Existing Analysis:
+Risks: {existing_risks if existing_risks else 'None detected'}
+Positives: {existing_positives if existing_positives else 'None detected'}
+
+Provide ONLY a JSON response with this format:
+{{
+  "enhanced_risks": ["One contextual risk if relevant, empty if none"],
+  "enhanced_positives": ["One contextual positive insight"]
+}}
+
+Rules:
+- Keep insights brief (max 8 words each)
+- Add context the existing analysis missed
+- For olive oil: mention heart-healthy fats, not just "high fat"
+- For lentils: mention plant-based protein quality
+- Only add 0-2 items total, focus on most impactful insights
+- Return valid JSON only"""
+        
+        response_text = client._call_llm(prompt)
+        
+        # Parse JSON response
+        import json
+        import re
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group(0))
+            # Filter out empty strings and limit additions
+            enhanced_risks = [r for r in data.get("enhanced_risks", []) if r and isinstance(r, str)][:1]
+            enhanced_positives = [p for p in data.get("enhanced_positives", []) if p and isinstance(p, str)][:2]
+            
+            return {
+                "enhanced_risks": enhanced_risks,
+                "enhanced_positives": enhanced_positives,
+            }
+        
+        return {}
+    except Exception:
+        return {}

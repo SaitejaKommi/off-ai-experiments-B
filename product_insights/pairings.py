@@ -1,32 +1,76 @@
 """Suggest complementary food pairings for a product."""
 
 from utils.nutrition_rules import CATEGORY_PAIRINGS
+from product_insights.llm_config import LLMConfig
+
+try:
+    from product_insights.llm_client import get_llm_client
+except ImportError:
+    get_llm_client = None
 
 
 def get_pairings(product: dict) -> list[str]:
-    """Return a list of complementary food suggestions for *product*.
+    """Return a list of complementary food suggestions for *product*."""
+    llm_pairings = _get_llm_pairings(product)
+    if llm_pairings:
+        return llm_pairings
 
-    The function matches the product's categories against the CATEGORY_PAIRINGS
-    lookup table using a multi-strategy approach:
-    1. Check all category tags (not just the first) for direct matches
-    2. Substring matching on all tags with word-based fallback
-    3. Default pairings if no match is found
+    if LLMConfig.LLM_FALLBACK_TO_RULES:
+        return _get_rule_based_pairings(product)
 
-    This approach ensures specific categories (e.g., 'peanut-butter') are
-    matched even if they're not the first category tag.
+    return []
 
-    Parameters
-    ----------
-    product:
-        Normalised product dictionary.
 
-    Returns
-    -------
-    list of str
-        Food items that pair well with this product.
-    """
+def _get_llm_pairings(product: dict) -> list[str]:
+    """Get pairings using LLM, returning empty list if unavailable/failed."""
+    if get_llm_client is None:
+        return []
+
+    try:
+        client = get_llm_client()
+        if not client:
+            return []
+
+        product_name = product.get("product_name") or "Unknown product"
+        categories_tags = product.get("categories_tags", [])
+        category_slug = _get_most_specific_category_slug(categories_tags)
+
+        if not category_slug:
+            return []
+
+        nutriments = product.get("nutriments", {})
+        nutrients = {
+            "energy": nutriments.get("energy-kcal_100g", 0),
+            "protein": nutriments.get("proteins_100g", 0),
+            "fat": nutriments.get("fat_100g", 0),
+            "carbs": nutriments.get("carbohydrates_100g", 0),
+            "fiber": nutriments.get("fiber_100g", 0),
+        }
+
+        pairings = client.get_food_pairings(
+            product_name=product_name,
+            category=category_slug,
+            nutrients=nutrients,
+        )
+        return pairings if isinstance(pairings, list) else []
+    except Exception:
+        return []
+
+
+def _get_most_specific_category_slug(categories_tags: list[str]) -> str:
+    """Extract most specific category slug from OFF category tags."""
+    if not categories_tags:
+        return ""
+
+    tag = categories_tags[-1]
+    parts = tag.split(":", 1)
+    return parts[-1].lower() if parts and parts[-1] else ""
+
+
+def _get_rule_based_pairings(product: dict) -> list[str]:
+    """Get pairings with existing rule-based strategy."""
     categories_tags = product.get("categories_tags", [])
-    
+
     if not categories_tags:
         return CATEGORY_PAIRINGS["default"]
 

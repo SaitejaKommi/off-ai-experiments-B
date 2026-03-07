@@ -1,134 +1,134 @@
-# off-ai-experiments-B — Product Intelligence Engine
+# Product Intelligence Engine (Canada + LLM)
 
-AI-powered product insights backed by [Open Food Facts](https://world.openfoodfacts.org/).
+AI-powered food product analysis using Open Food Facts (Canada catalog) and LLM-generated insights.
 
-## What it does
+## Overview
 
-Given a product barcode or an Open Food Facts product URL the engine produces:
+This project takes a product barcode (or OFF product URL) and produces:
 
-| Output | Description |
-|---|---|
-| **Product summary** | Plain-language overview of the product |
-| **Health explanation** | Explanation of NutriScore, NOVA group, and nutrient density |
-| **Risk indicators** | Warnings (high fat, high sugar, ultra-processed, …) |
-| **Positive indicators** | Good news (high protein, organic label, good NutriScore, …) |
-| **Better alternatives** | Healthier products in the same category |
-| **Complementary pairings** | Foods that pair well with this product |
+- LLM-generated product summary
+- LLM-generated NutriScore + NOVA explanations
+- Risk indicators and positive indicators
+- Better alternatives from the **Canada OFF catalog**
+- LLM-generated suggested food pairings
+
+## What Changed (LLM Integration)
+
+The project moved from mostly rule-based text to LLM-first outputs.
+
+### Before
+- Static/hardcoded text templates for summaries and explanations
+- Rule-based pairings from category maps
+- Global OFF catalog lookups (`world.openfoodfacts.org`)
+
+### Now
+- LLM-first summaries, score explanations, and pairings
+- Groq model support added and enabled by default
+- Canada-only OFF endpoints (`ca-en.openfoodfacts.org`) for fetch and alternatives
+- Optional rule fallback controlled by `LLM_FALLBACK_TO_RULES`
+
+## Model and Provider
+
+- Default provider: `groq`
+- Default model: `llama-3.3-70b-versatile`
+- Optional provider: `gemini`
+
+Configuration is in `.env` via variables described in `.env.example`.
 
 ## Architecture
 
-```
-Product Barcode / URL
-        ↓
-Open Food Facts API Fetch   (product_insights/fetcher.py)
-        ↓
-Product Insight Engine
-        ├── Insight Engine      (product_insights/insight_engine.py)
-        ├── Score Explainer     (product_insights/score_explainer.py)
-        ├── Summary Generator   (product_insights/summary.py)
-        ├── Recommendation Eng. (product_insights/recommender.py)
-        └── Pairing Suggestions (product_insights/pairings.py)
-        ↓
-CLI / JSON output               (product_insights/cli.py)
+```text
+Barcode / OFF URL
+   -> fetcher.py (Canada OFF API)
+   -> insight_engine.py (signals + optional LLM contextual insights)
+   -> summary.py (LLM-first summary)
+   -> score_explainer.py (LLM-first NutriScore/NOVA explanation)
+   -> recommender.py (Canada OFF alternatives by specific category)
+   -> pairings.py (LLM-first pairings)
+   -> cli.py (final report output)
 ```
 
-## Repository structure
+## Repository Structure
 
-```
-off-ai-experiments-B/
-│
-├── product_insights/
-│   ├── __init__.py
-│   ├── __main__.py        ← enables python -m product_insights.cli
-│   ├── fetcher.py
-│   ├── insight_engine.py
-│   ├── score_explainer.py
-│   ├── recommender.py
-│   ├── pairings.py
-│   ├── summary.py
-│   └── cli.py
-│
-├── utils/
-│   ├── __init__.py
-│   ├── nutrition_rules.py
-│   └── product_helpers.py
-│
-├── tests/
-│   ├── __init__.py
-│   └── test_product_insights.py
-│
-├── requirements.txt
-└── README.md
+```text
+product_insights/
+  cli.py
+  fetcher.py
+  insight_engine.py
+  llm_client.py
+  llm_config.py
+  pairings.py
+  recommender.py
+  score_explainer.py
+  summary.py
+
+utils/
+  nutrition_rules.py
+  product_helpers.py
+
+tests/
+  test_product_insights.py
 ```
 
-## Quick start
+## Setup (Beginner Friendly)
 
-### Install dependencies
+1) Create and activate a virtual environment
+
+```bash
+python -m venv .venv
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
+
+2) Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Run from the command line
+3) Create your environment file
 
 ```bash
-# Using a barcode
+copy .env.example .env
+```
+
+4) Edit `.env`
+
+- Set `LLM_PROVIDER=groq` (default)
+- Add `GROQ_API_KEY=...`
+- Keep `USE_LLM_PAIRINGS=true`
+- Keep `LLM_FALLBACK_TO_RULES=false` for LLM-only behavior
+
+## Run
+
+```bash
 python -m product_insights.cli 0068100084245
-
-# Using an Open Food Facts URL
-python -m product_insights.cli https://world.openfoodfacts.org/product/0068100084245/
-
-# Include detailed score explanations
 python -m product_insights.cli 0068100084245 --scores
 ```
 
-### Example output
+## Validate
 
-```
-Fetching product: 0068100084245 …
-
-Product: Smooth Kraft Peanut Butter
-
-Summary
--------
-Smooth Kraft Peanut Butter is a product with moderate nutritional quality
-(NutriScore C). It is classified as an ultra-processed food, which may contain
-additives, artificial flavors, and emulsifiers. It contains high levels of fat,
-a good source of protein. Contains allergens: peanuts, soybeans.
-
-Risk indicators
----------------
-  ⚠  High fat
-  ⚠  High saturated fat
-  ⚠  High calorie density
-  ⚠  Ultra-processed food (NOVA 4)
-
-Positive indicators
--------------------
-  ✓  High protein
-
-Better alternatives
--------------------
-  1. Organic Peanut Butter (B)
-     NutriScore B and lower sugar and lower fat
-
-Suggested pairings
-------------------
-  • Banana
-  • Whole grain bread
-  • Oatmeal
-  • Apple slices
-  • Celery
-```
-
-## Run tests
+Run tests:
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests/ -q
 ```
 
-## Future enhancements
+Check LLM config status:
 
-- **LLM summarisation** – replace rule-based summaries with an LLM prompt
-- **Vector similarity search** – find similar products via embeddings
-- **Personalised recommendations** – filter by user dietary preferences
+```bash
+python -c "from product_insights.llm_config import LLMConfig; print(LLMConfig.get_status())"
+```
+
+## Security Notes
+
+- `.env` is ignored by git.
+- Never commit real API keys.
+- `.env.example` contains placeholders only.
+
+## Current Behavior
+
+- OFF data source is Canada-only (`ca-en.openfoodfacts.org`)
+- LLM provider default is Groq
+- LLM mode is enabled by default
+- Rule fallback is disabled by default (can be re-enabled via env)
