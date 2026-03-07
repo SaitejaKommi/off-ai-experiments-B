@@ -52,6 +52,14 @@ Nutrients per 100g:
 - Fiber: {extract_nutriment(nutriments, 'fiber'):.1f}g
 
 Write a concise, helpful explanation of what this grade means and why this product received it. Focus on the key nutrients that influenced the score. Be specific and actionable."""
+        prompt += """
+
+Important nutrition guardrails:
+- Do NOT call protein "high" unless protein >= 10g per 100g.
+- Do NOT call fiber "high" unless fiber >= 6g per 100g.
+- If sugar is low, prefer wording like "low sugar" rather than claiming high protein benefits.
+- Avoid over-claiming healthiness for candy/confectionery products.
+"""
         
         response = client._call_llm(prompt)
         return response.strip() if response else ""

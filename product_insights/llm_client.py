@@ -180,7 +180,7 @@ Keep it factual and helpful for consumers."""
             if parts:
                 nutrient_info = f"\nNutrients:\n" + "\n".join(parts)
         
-        prompt = f"""As a food pairing expert, suggest 5 complementary foods for this product.
+        prompt = f"""You are a food pairing expert. Suggest 5 foods commonly eaten with this specific product.
 
 Product: {product_name}
 Category: {category}{nutrient_info}
@@ -191,11 +191,12 @@ Return ONLY a JSON response with this exact format (no markdown, no explanation)
   "reasoning": "Brief explanation of why these foods pair well"
 }}
 
-Focus on:
-1. Nutritional complementarity (e.g., protein with carbs)
-2. Culinary tradition (how these foods are commonly eaten together)
-3. Flavor and texture balance
-4. Practical meal combinations
+    Rules:
+    1. Use category-specific, culturally realistic combinations for {category}.
+    2. Avoid generic snack lists that can apply to anything.
+    3. Prefer foods commonly consumed together with {product_name} in real meals/snacks.
+    4. Keep each item short (1-3 words), no brand names, no duplicates.
+    5. For candy/gummies/sweets categories, prefer realistic accompaniments (e.g., tea, fruit, yogurt), not random gourmet pairings.
 
 Only return valid JSON, nothing else."""
         

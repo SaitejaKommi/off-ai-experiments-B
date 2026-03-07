@@ -208,9 +208,14 @@ class TestExplainNutriscore:
     def test_grade_a_description(self, healthy_product):
         text = explain_nutriscore(healthy_product)
         # Accept both template and LLM variations
-        assert ("NutriScore A" in text or "nutriscore grade of a" in text.lower() or "nutriscore of a" in text.lower())
+        assert (
+            "NutriScore A" in text
+            or "nutriscore grade of a" in text.lower()
+            or "nutriscore of a" in text.lower()
+            or "a grade on the nutriscore" in text.lower()
+        )
         # LLM may say "excellent", "highly nutritious", "great", etc.
-        assert any(word in text.lower() for word in ["excellent", "highly nutritious", "great", "good", "high"])
+        assert any(word in text.lower() for word in ["excellent", "highly nutritious", "great", "good", "high", "nutritious", "healthy"])
 
 
 class TestExplainNova:

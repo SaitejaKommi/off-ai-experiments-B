@@ -11,6 +11,9 @@ except ImportError:
 
 def get_pairings(product: dict) -> list[str]:
     """Return a list of complementary food suggestions for *product*."""
+    if not product.get("categories_tags"):
+        return CATEGORY_PAIRINGS["default"]
+
     llm_pairings = _get_llm_pairings(product)
     if llm_pairings:
         return llm_pairings
@@ -52,7 +55,10 @@ def _get_llm_pairings(product: dict) -> list[str]:
             category=category_slug,
             nutrients=nutrients,
         )
-        return pairings if isinstance(pairings, list) else []
+        if not isinstance(pairings, list):
+            return []
+
+        return _post_process_pairings(product, pairings)
     except Exception:
         return []
 
@@ -108,4 +114,50 @@ def _get_rule_based_pairings(product: dict) -> list[str]:
                 return CATEGORY_PAIRINGS[part]
 
     return CATEGORY_PAIRINGS["default"]
+
+
+def _post_process_pairings(product: dict, pairings: list[str]) -> list[str]:
+    """Post-process LLM pairings for category realism and consistency."""
+    categories_tags = product.get("categories_tags", [])
+    category_text = " ".join(categories_tags).lower()
+    is_candy_like = any(
+        key in category_text
+        for key in ["candy", "candies", "sweets", "sweet", "confectionery", "gummies", "gummy"]
+    )
+
+    cleaned = [p.strip().lower() for p in pairings if isinstance(p, str) and p.strip()]
+    cleaned = list(dict.fromkeys(cleaned))
+
+    if not is_candy_like:
+        return cleaned[:5]
+
+    # Candy/gummies: avoid generic heavy meal items and unrealistic pairings.
+    # Prefer simple accompaniments and avoid tea-centric defaults.
+    preferred_keywords = [
+        "fruit", "citrus", "yogurt", "water", "sparkling", "nuts"
+    ]
+    filtered = [
+        item for item in cleaned
+        if any(keyword in item for keyword in preferred_keywords)
+    ]
+
+    # Explicitly block tea suggestions for candy/gummies.
+    filtered = [item for item in filtered if "tea" not in item]
+
+    fallback_candy = [
+        "fresh fruit",
+        "fresh citrus slices",
+        "plain yogurt",
+        "mixed nuts",
+        "sparkling water",
+        "water",
+    ]
+
+    for fallback_item in fallback_candy:
+        if len(filtered) >= 5:
+            break
+        if fallback_item not in filtered:
+            filtered.append(fallback_item)
+
+    return filtered[:5]
 

@@ -67,6 +67,8 @@ def analyse(product: dict) -> dict:
     # --- Positive indicators ---
     if protein > PROTEIN_HIGH:
         positive.append("High protein")
+    if sugars <= 5:
+        positive.append("Low sugar content")
     if fiber > FIBER_HIGH:
         positive.append("High fiber")
     if any("organic" in t or "bio" in t for t in labels):
@@ -88,7 +90,13 @@ def analyse(product: dict) -> dict:
     llm_insights = _get_llm_insights(product, risk, positive, nutriments)
     if llm_insights:
         risk.extend(llm_insights.get("enhanced_risks", []))
-        positive.extend(llm_insights.get("enhanced_positives", []))
+        filtered_positives = _filter_llm_positives(
+            llm_insights.get("enhanced_positives", []),
+            nutriments,
+            categories_tags=product.get("categories_tags", []),
+            existing_positives=positive,
+        )
+        positive.extend(filtered_positives)
 
     return {
         "risk_indicators": risk,
@@ -164,3 +172,54 @@ Rules:
         return {}
     except Exception:
         return {}
+
+
+def _filter_llm_positives(
+    llm_positives: list,
+    nutriments: dict,
+    categories_tags: list,
+    existing_positives: list,
+) -> list[str]:
+    """Filter LLM positives to avoid nutrition-incorrect or duplicate claims."""
+    if not llm_positives:
+        return []
+
+    protein = extract_nutriment(nutriments, "proteins")
+    fiber = extract_nutriment(nutriments, "fiber")
+    sugars = extract_nutriment(nutriments, "sugars")
+    category_text = " ".join(categories_tags).lower()
+    is_candy_like = any(
+        key in category_text
+        for key in ["candy", "candies", "sweets", "sweet", "confectionery", "gummies", "gummy"]
+    )
+
+    existing_lower = {item.lower() for item in existing_positives}
+    filtered: list[str] = []
+
+    for item in llm_positives:
+        if not isinstance(item, str):
+            continue
+        text = item.strip()
+        if not text:
+            continue
+
+        lower = text.lower()
+
+        if "protein" in lower and protein <= PROTEIN_HIGH:
+            continue
+        if "fiber" in lower and fiber <= FIBER_HIGH:
+            continue
+        if "low sugar" in lower and sugars > 5:
+            continue
+        if is_candy_like and "protein" in lower:
+            continue
+        if lower in existing_lower:
+            continue
+
+        filtered.append(text)
+        existing_lower.add(lower)
+
+        if len(filtered) >= 2:
+            break
+
+    return filtered
