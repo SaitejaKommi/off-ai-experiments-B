@@ -9,16 +9,13 @@ from utils.product_helpers import normalise_grade, extract_nutriment, safe_int
 
 _GRADE_ORDER = {"a": 0, "b": 1, "c": 2, "d": 3, "e": 4}
 
-_SEARCH_URL = (
-    "https://ca-en.openfoodfacts.org/cgi/search.pl"
-    "?action=process"
-    "&tagtype_0=categories"
-    "&tag_contains_0=contains"
-    "&tag_0={category}"
+# V2 search API is more reliable and faster than the CGI endpoint
+_SEARCH_URL_V2 = (
+    "https://world.openfoodfacts.org/api/v2/search"
+    "?categories_tags={category}"
+    "&fields=product_name,nutriscore_grade,nova_group,nutriments,categories_tags,url"
+    "&page_size=50"
     "&sort_by=unique_scans_n"
-    "&page_size=20"
-    "&json=1"
-    "&fields=product_name,nutriscore_grade,nova_group,nutriments,url,categories_tags,labels_tags"
 )
 
 _SEARCH_CACHE: dict[str, list[dict[str, Any]]] = {}
@@ -59,33 +56,56 @@ def _get_most_specific_category(categories_tags: list) -> str:
     return slug if slug else ""
 
 
-def _is_category_match(product_categories: list, search_category: str) -> bool:
-    """Check if a product's categories contain the search category.
-    
-    Ensures the product is actually in the searched category (not just
-    a generic parent category).
-    """
+def _get_parent_categories(categories_tags: list, max_depth: int = 3) -> list[str]:
+    """Return up to ``max_depth`` category slugs from specific to broader."""
+    if not categories_tags:
+        return []
+
+    relevant = categories_tags[-max_depth:]
+    slugs: list[str] = []
+    for tag in reversed(relevant):
+        parts = tag.split(":", 1)
+        slug = parts[-1].lower() if parts[-1] else ""
+        if slug:
+            slugs.append(slug)
+    return slugs
+
+
+def _is_category_match(product_categories: list, search_categories: list[str]) -> bool:
+    """Check if a product belongs to any searched category slug."""
+    if not search_categories:
+        return False
+
+    wanted = set(search_categories)
     for tag in product_categories:
         parts = tag.split(":", 1)
         slug = parts[-1].lower() if parts[-1] else ""
-        if slug == search_category:
+        if slug in wanted:
             return True
     return False
 
 
 def _fetch_candidates_for_category(category_slug: str) -> list[dict[str, Any]]:
-    """Fetch candidate products for a category with simple in-process caching."""
+    """Fetch candidate products using v2 API with caching and error handling."""
     if category_slug in _SEARCH_CACHE:
         return _SEARCH_CACHE[category_slug]
 
-    url = _SEARCH_URL.format(category=urllib.parse.quote(category_slug))
-    req = urllib.request.Request(url, headers={"User-Agent": "off-ai-experiments-B/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as response:
-        data = json.loads(response.read().decode())
+    url = _SEARCH_URL_V2.format(category=urllib.parse.quote(category_slug))
 
-    products = data.get("products", [])
-    _SEARCH_CACHE[category_slug] = products
-    return products
+    # Retry transient network failures. Do not cache failures as empty lists.
+    for _ in range(2):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "off-ai-experiments-B/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                data = json.loads(response.read().decode())
+
+            products = data.get("products", [])
+            _SEARCH_CACHE[category_slug] = products
+            return products
+        except Exception:
+            continue
+
+    return []
 
 
 def _extract_metrics(nutriments: dict) -> dict[str, float]:
@@ -206,15 +226,39 @@ def _build_reason(
     return f"{'; '.join(reason_parts)} (confidence: {confidence}%)"
 
 
-def get_alternatives(product: dict, max_results: int = 3) -> list[dict]:
+def _build_simple_reason(
+    grade: str | None,
+    current_rank: int,
+    alt_rank: int,
+    alt_nova: int,
+    current_nova: int,
+) -> str:
+    """Create a lightweight reason when nutrient fields are missing."""
+    parts: list[str] = []
+
+    if grade:
+        parts.append(f"Better NutriScore ({grade.upper()})")
+
+    grade_diff = current_rank - alt_rank
+    if grade_diff >= 2:
+        parts.append("significantly better nutritional quality")
+    elif grade_diff == 1:
+        parts.append("better nutritional quality")
+
+    if current_nova > 0 and alt_nova > 0 and alt_nova < current_nova:
+        parts.append(f"lower processing (NOVA {current_nova} -> {alt_nova})")
+
+    if not parts:
+        parts.append("better overall nutrition profile")
+
+    return "; ".join(parts)
+
+
+def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
     """Return a list of healthier alternative products.
 
-    The function now uses the MOST SPECIFIC category (not the first generic one)
-    to query OFF, ensuring alternatives are truly in the same category
-    (e.g., peanut-butters, not just plant-based-foods).
-
-    It also filters results to verify they belong to the searched category,
-    preventing unrelated products from appearing.
+    The function uses multiple category levels (specific to broader) and
+    falls back to NutriScore-only reasoning when nutrient detail is sparse.
 
     Parameters
     ----------
@@ -234,23 +278,27 @@ def get_alternatives(product: dict, max_results: int = 3) -> list[dict]:
     current_rank = _grade_rank(current_grade)
     current_nova = safe_int(product.get("nova_group"), 0)
 
-    # Use MOST SPECIFIC category instead of first
+    # Use multiple category levels to avoid empty result sets in sparse categories.
     categories_tags = product.get("categories_tags", [])
-    slug = _get_most_specific_category(categories_tags)
-    
-    if not slug:
+    category_slugs = _get_parent_categories(categories_tags, max_depth=3)
+
+    if not category_slugs:
         return []
 
-    try:
-        candidate_products = _fetch_candidates_for_category(slug)
-    except Exception:
+    candidate_products: list[dict] = []
+    for slug in category_slugs:
+        candidates = _fetch_candidates_for_category(slug)
+        if candidates:
+            candidate_products = candidates
+            break
+
+    if not candidate_products:
         return []
 
     current_name = (product.get("product_name") or "").strip().lower()
     current_nutrients = product.get("nutriments", {})
     current_metrics = _extract_metrics(current_nutrients)
-    if not _has_min_nutrient_data(current_nutrients):
-        return []
+    has_detailed_nutrients = _has_min_nutrient_data(current_nutrients)
 
     alternatives = []
     for item in candidate_products:
@@ -258,10 +306,8 @@ def get_alternatives(product: dict, max_results: int = 3) -> list[dict]:
         if not name or name.lower() == current_name:
             continue
 
-        # NEW: Verify the product is actually in the searched category
-        # This prevents bread from showing up when searching peanut-butters
         item_categories = item.get("categories_tags", [])
-        if not _is_category_match(item_categories, slug):
+        if not _is_category_match(item_categories, category_slugs):
             continue
 
         grade = normalise_grade(item.get("nutriscore_grade"))
@@ -270,41 +316,46 @@ def get_alternatives(product: dict, max_results: int = 3) -> list[dict]:
             continue
 
         alt_nutrients = item.get("nutriments", {})
-        if not _has_min_nutrient_data(alt_nutrients):
-            continue
-
         alt_metrics = _extract_metrics(alt_nutrients)
         alt_nova = safe_int(item.get("nova_group"), 0)
 
-        # Compare only across metrics that are explicitly present in BOTH products.
-        shared_metrics = {
-            key: _has_metric_key(current_nutrients, key) and _has_metric_key(alt_nutrients, key)
-            for key in ["sugars", "fat", "salt", "proteins", "fiber"]
-        }
-        if sum(1 for is_shared in shared_metrics.values() if is_shared) < 2:
-            continue
+        # Prefer detailed comparison when both products have enough data.
+        if has_detailed_nutrients and _has_min_nutrient_data(alt_nutrients):
+            shared_metrics = {
+                key: _has_metric_key(current_nutrients, key) and _has_metric_key(alt_nutrients, key)
+                for key in ["sugars", "fat", "salt", "proteins", "fiber"]
+            }
 
-        current_comp = {key: current_metrics[key] if shared_metrics[key] else 0.0 for key in shared_metrics}
-        alt_comp = {key: alt_metrics[key] if shared_metrics[key] else 0.0 for key in shared_metrics}
+            if sum(1 for is_shared in shared_metrics.values() if is_shared) >= 1:
+                current_comp = {key: current_metrics[key] if shared_metrics[key] else 0.0 for key in shared_metrics}
+                alt_comp = {key: alt_metrics[key] if shared_metrics[key] else 0.0 for key in shared_metrics}
 
-        score = _compute_comparison_score(
-            current_metrics=current_comp,
-            alt_metrics=alt_comp,
-            current_grade_rank=current_rank,
-            alt_grade_rank=rank,
-            current_nova=current_nova,
-            alt_nova=alt_nova,
-        )
+                score = _compute_comparison_score(
+                    current_metrics=current_comp,
+                    alt_metrics=alt_comp,
+                    current_grade_rank=current_rank,
+                    alt_grade_rank=rank,
+                    current_nova=current_nova,
+                    alt_nova=alt_nova,
+                )
 
-        confidence = max(50, min(98, int(50 + score * 35)))
-        reason = _build_reason(
-            current_metrics=current_metrics,
-            alt_metrics=alt_metrics,
-            grade=grade,
-            current_nova=current_nova,
-            alt_nova=alt_nova,
-            confidence=confidence,
-        )
+                confidence = max(50, min(98, int(50 + score * 35)))
+                reason = _build_reason(
+                    current_metrics=current_metrics,
+                    alt_metrics=alt_metrics,
+                    grade=grade,
+                    current_nova=current_nova,
+                    alt_nova=alt_nova,
+                    confidence=confidence,
+                )
+            else:
+                score = (current_rank - rank) * 0.25
+                confidence = 75
+                reason = _build_simple_reason(grade, current_rank, rank, alt_nova, current_nova)
+        else:
+            score = (current_rank - rank) * 0.25
+            confidence = 75
+            reason = _build_simple_reason(grade, current_rank, rank, alt_nova, current_nova)
 
         alternatives.append(
             {
@@ -313,16 +364,10 @@ def get_alternatives(product: dict, max_results: int = 3) -> list[dict]:
                 "reason": reason,
                 "score": score,
                 "confidence": confidence,
+                "url": item.get("url", ""),
             }
         )
 
     alternatives.sort(key=lambda item: item.get("score", 0), reverse=True)
 
-    # Stage 1: strict confidence cut for high-quality replacements.
-    strict = [item for item in alternatives if item.get("score", 0) > 0.05]
-    if strict:
-        return strict[:max_results]
-
-    # Stage 2: relaxed fallback when strict stage returns none.
-    relaxed = [item for item in alternatives if item.get("score", 0) > 0.0]
-    return relaxed[:max_results]
+    return alternatives[:max_results]
