@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "AI Product Insights",
+  "version": "1.0.0",
+  "description": "AI-powered insights for Open Food Facts products",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://ca.openfoodfacts.org/*",
+    "https://ca-en.openfoodfacts.org/*",
+    "https://ca-fr.openfoodfacts.org/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://ca.openfoodfacts.org/product/*",
+        "https://ca-en.openfoodfacts.org/product/*",
+        "https://ca-fr.openfoodfacts.org/product/*"
+      ],
+      "js": ["content.js"],
+      "css": ["inject.css"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI Product Insights"
+  }
+}
