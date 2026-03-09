@@ -13,7 +13,7 @@ _GRADE_ORDER = {"a": 0, "b": 1, "c": 2, "d": 3, "e": 4}
 _SEARCH_URL_V2 = (
     "https://world.openfoodfacts.org/api/v2/search"
     "?categories_tags={category}"
-    "&fields=product_name,nutriscore_grade,nova_group,nutriments,categories_tags,url"
+    "&fields=product_name,nutriscore_grade,nova_group,nutriments,categories_tags,url,unique_scans_n"
     "&page_size=50"
     "&sort_by=unique_scans_n"
 )
@@ -254,6 +254,30 @@ def _build_simple_reason(
     return "; ".join(parts)
 
 
+def _build_discovery_reason(
+    grade: str | None,
+    current_rank: int,
+    alt_rank: int,
+    current_nova: int,
+    alt_nova: int,
+) -> str:
+    """Fallback message when strict healthier alternatives are scarce."""
+    parts: list[str] = ["Category discovery option"]
+
+    if grade and alt_rank < current_rank:
+        parts.append(f"better NutriScore ({grade.upper()})")
+    elif grade and alt_rank == current_rank:
+        parts.append(f"same NutriScore ({grade.upper()})")
+
+    if current_nova > 0 and alt_nova > 0:
+        if alt_nova < current_nova:
+            parts.append(f"lower processing (NOVA {current_nova} -> {alt_nova})")
+        elif alt_nova == current_nova:
+            parts.append(f"similar processing (NOVA {alt_nova})")
+
+    return "; ".join(parts)
+
+
 def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
     """Return a list of healthier alternative products.
 
@@ -289,11 +313,24 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
     for slug in category_slugs:
         candidates = _fetch_candidates_for_category(slug)
         if candidates:
-            candidate_products = candidates
-            break
+            candidate_products.extend(candidates)
 
     if not candidate_products:
         return []
+
+    # De-duplicate candidates fetched across category levels.
+    deduped_candidates: list[dict] = []
+    seen_keys: set[tuple[str, str]] = set()
+    for item in candidate_products:
+        key = (
+            (item.get("product_name") or "").strip().lower(),
+            (item.get("url") or "").strip().lower(),
+        )
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped_candidates.append(item)
+    candidate_products = deduped_candidates
 
     current_name = (product.get("product_name") or "").strip().lower()
     current_nutrients = product.get("nutriments", {})
@@ -312,50 +349,59 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
 
         grade = normalise_grade(item.get("nutriscore_grade"))
         rank = _grade_rank(grade)
-        if rank >= current_rank:
-            continue
+        is_strictly_better = rank < current_rank
 
         alt_nutrients = item.get("nutriments", {})
         alt_metrics = _extract_metrics(alt_nutrients)
         alt_nova = safe_int(item.get("nova_group"), 0)
 
         # Prefer detailed comparison when both products have enough data.
-        if has_detailed_nutrients and _has_min_nutrient_data(alt_nutrients):
-            shared_metrics = {
-                key: _has_metric_key(current_nutrients, key) and _has_metric_key(alt_nutrients, key)
-                for key in ["sugars", "fat", "salt", "proteins", "fiber"]
-            }
+        if is_strictly_better:
+            if has_detailed_nutrients and _has_min_nutrient_data(alt_nutrients):
+                shared_metrics = {
+                    key: _has_metric_key(current_nutrients, key) and _has_metric_key(alt_nutrients, key)
+                    for key in ["sugars", "fat", "salt", "proteins", "fiber"]
+                }
 
-            if sum(1 for is_shared in shared_metrics.values() if is_shared) >= 1:
-                current_comp = {key: current_metrics[key] if shared_metrics[key] else 0.0 for key in shared_metrics}
-                alt_comp = {key: alt_metrics[key] if shared_metrics[key] else 0.0 for key in shared_metrics}
+                if sum(1 for is_shared in shared_metrics.values() if is_shared) >= 1:
+                    current_comp = {key: current_metrics[key] if shared_metrics[key] else 0.0 for key in shared_metrics}
+                    alt_comp = {key: alt_metrics[key] if shared_metrics[key] else 0.0 for key in shared_metrics}
 
-                score = _compute_comparison_score(
-                    current_metrics=current_comp,
-                    alt_metrics=alt_comp,
-                    current_grade_rank=current_rank,
-                    alt_grade_rank=rank,
-                    current_nova=current_nova,
-                    alt_nova=alt_nova,
-                )
+                    score = _compute_comparison_score(
+                        current_metrics=current_comp,
+                        alt_metrics=alt_comp,
+                        current_grade_rank=current_rank,
+                        alt_grade_rank=rank,
+                        current_nova=current_nova,
+                        alt_nova=alt_nova,
+                    )
 
-                confidence = max(50, min(98, int(50 + score * 35)))
-                reason = _build_reason(
-                    current_metrics=current_metrics,
-                    alt_metrics=alt_metrics,
-                    grade=grade,
-                    current_nova=current_nova,
-                    alt_nova=alt_nova,
-                    confidence=confidence,
-                )
+                    confidence = max(50, min(98, int(50 + score * 35)))
+                    reason = _build_reason(
+                        current_metrics=current_metrics,
+                        alt_metrics=alt_metrics,
+                        grade=grade,
+                        current_nova=current_nova,
+                        alt_nova=alt_nova,
+                        confidence=confidence,
+                    )
+                else:
+                    score = (current_rank - rank) * 0.25
+                    confidence = 75
+                    reason = _build_simple_reason(grade, current_rank, rank, alt_nova, current_nova)
             else:
                 score = (current_rank - rank) * 0.25
                 confidence = 75
                 reason = _build_simple_reason(grade, current_rank, rank, alt_nova, current_nova)
         else:
-            score = (current_rank - rank) * 0.25
-            confidence = 75
-            reason = _build_simple_reason(grade, current_rank, rank, alt_nova, current_nova)
+            # Keep non-strict options as fallback product discovery entries.
+            score = -0.05
+            if rank < 99:
+                score += max(-0.2, (current_rank - rank) * 0.05)
+            if current_nova > 0 and alt_nova > 0:
+                score += max(-0.1, min(0.1, (current_nova - alt_nova) * 0.03))
+            confidence = 60
+            reason = _build_discovery_reason(grade, current_rank, rank, current_nova, alt_nova)
 
         alternatives.append(
             {
@@ -365,9 +411,21 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
                 "score": score,
                 "confidence": confidence,
                 "url": item.get("url", ""),
+                "is_better": is_strictly_better,
             }
         )
 
-    alternatives.sort(key=lambda item: item.get("score", 0), reverse=True)
+    # Prefer strict healthier options first. If none exist, return fallback discovery options.
+    better = [item for item in alternatives if item.get("is_better")]
+    fallback = [item for item in alternatives if not item.get("is_better")]
 
-    return alternatives[:max_results]
+    better.sort(key=lambda item: item.get("score", 0), reverse=True)
+    fallback.sort(key=lambda item: item.get("score", 0), reverse=True)
+
+    selected = better[:max_results] if better else fallback[:max_results]
+
+    # Remove internal helper key before returning API response.
+    for item in selected:
+        item.pop("is_better", None)
+
+    return selected
