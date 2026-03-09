@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Product Insights</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <!-- Header -->
+        <div class="header">
+            <h1> AI Product Insights</h1>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="card empty-state">
+            <div class="empty-state-content">
+                <div class="empty-icon">📭</div>
+                <h2>No Product Selected</h2>
+                <p>Open a product page on Open Food Facts to see AI insights here.</p>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="card loading-state" style="display: none;">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <p>Analyzing product...</p>
+            </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="card error-state" style="display: none;">
+            <div class="error-icon">⚠️</div>
+            <h3>Unable to Fetch Insights</h3>
+            <p id="errorMessage">An error occurred while fetching product insights.</p>
+        </div>
+
+        <!-- Insights Container -->
+        <div id="insightsContainer" style="display: none;">
+            <!-- Product Name -->
+            <div class="card product-header">
+                <h2 id="productName"></h2>
+            </div>
+
+            <!-- Summary Section -->
+            <div class="card section">
+                <h3 class="section-title">📝 Summary</h3>
+                <p id="summary"></p>
+            </div>
+
+            <!-- Health Indicators Section -->
+            <div class="card section">
+                <h3 class="section-title">🏥 Health Indicators</h3>
+                <div class="indicators">
+                    <div id="positivesContainer" class="indicator-group">
+                        <div class="indicator-label">✓ Positives</div>
+                        <ul id="positivesList"></ul>
+                    </div>
+                    <div id="risksContainer" class="indicator-group">
+                        <div class="indicator-label">⚠ Risks</div>
+                        <ul id="risksList"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Score Explanation Section -->
+            <div class="card section" id="scoreSection" style="display: none;">
+                <h3 class="section-title">📊 Score Explanation</h3>
+                <p id="scoreExplanation"></p>
+            </div>
+
+            <!-- Better Alternatives Section -->
+            <div class="card section" id="alternativesSection" style="display: none;">
+                <h3 class="section-title">🛒 Better Alternatives</h3>
+                <ol id="alternativesList" class="alternatives-list"></ol>
+            </div>
+
+            <!-- Suggested Pairings Section -->
+            <div class="card section" id="pairingsSection" style="display: none;">
+                <h3 class="section-title">🍽️ Suggested Pairings</h3>
+                <ul id="pairingsList" class="pairings-list"></ul>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
