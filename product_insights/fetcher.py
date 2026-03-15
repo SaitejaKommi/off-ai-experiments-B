@@ -1,25 +1,6 @@
-"""Fetch product data from the Open Food Facts API."""
+"""Fetch product data from the local DuckDB-backed OFF dataset."""
 
-import urllib.request
-import json
-from typing import Optional
-
-_API_BASE = "https://ca-en.openfoodfacts.org/api/v2/product/{barcode}?fields=product_name,nutriscore_grade,nova_group,nutriments,ingredients_text,categories,categories_tags,labels,labels_tags,additives_tags,allergens_tags,image_url"
-
-_FIELDS = [
-    "product_name",
-    "nutriscore_grade",
-    "nova_group",
-    "nutriments",
-    "ingredients_text",
-    "categories",
-    "categories_tags",
-    "labels",
-    "labels_tags",
-    "additives_tags",
-    "allergens_tags",
-    "image_url",
-]
+from product_insights.data_store import fetch_one, row_to_product
 
 
 def _barcode_from_url(url: str) -> str:
@@ -44,26 +25,31 @@ def fetch_product(barcode_or_url: str) -> dict:
     Returns
     -------
     dict
-        Normalised product dictionary with the fields listed in ``_FIELDS``.
+        Normalised product dictionary from the DuckDB ``products`` view.
 
     Raises
     ------
     ValueError
-        If the product is not found or the API returns an error.
+        If the product is not found in the local Canada dataset.
     """
     if barcode_or_url.startswith("http"):
         barcode = _barcode_from_url(barcode_or_url)
     else:
         barcode = barcode_or_url.strip()
 
-    url = _API_BASE.format(barcode=barcode)
-    req = urllib.request.Request(url, headers={"User-Agent": "off-ai-experiments-B/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as response:
-        data = json.loads(response.read().decode())
+    row = fetch_one(
+        """
+        SELECT *
+        FROM products
+        WHERE code = ?
+        LIMIT 1
+        """,
+        [barcode],
+    )
 
-    if data.get("status") == 0 or data.get("status_verbose") == "product not found":
+    if row is None:
         raise ValueError(f"Product not found for barcode: {barcode}")
 
-    product = data.get("product", {})
+    product = row_to_product(row)
     product["_barcode"] = barcode
     return product

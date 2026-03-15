@@ -10,7 +10,17 @@
     <div class="popup-container">
         <!-- Header -->
         <div class="header">
-            <h1> AI Product Insights</h1>
+            <div class="header-content">
+                <img src="../LOGO OFF.png" alt="Open Food Facts" class="header-logo">
+                <div class="header-title-wrap">
+                    <span class="title-main">Product Insights</span>
+                    <div class="header-meta">
+                        <span class="title-ai-chip">✦ AI</span>
+                        <span class="header-tagline">Smart analysis</span>
+                    </div>
+                </div>
+            </div>
+            <div class="header-divider"></div>
         </div>
 
         <!-- Empty State -->
@@ -55,20 +65,14 @@
                 <h3 class="section-title">🏥 Health Indicators</h3>
                 <div class="indicators">
                     <div id="positivesContainer" class="indicator-group">
-                        <div class="indicator-label">✓ Positives</div>
+                        <div class="indicator-label">Positives</div>
                         <ul id="positivesList"></ul>
                     </div>
                     <div id="risksContainer" class="indicator-group">
-                        <div class="indicator-label">⚠ Risks</div>
+                        <div class="indicator-label">Risks</div>
                         <ul id="risksList"></ul>
                     </div>
                 </div>
-            </div>
-
-            <!-- Score Explanation Section -->
-            <div class="card section" id="scoreSection" style="display: none;">
-                <h3 class="section-title">📊 Score Explanation</h3>
-                <p id="scoreExplanation"></p>
             </div>
 
             <!-- Better Alternatives Section -->
@@ -81,6 +85,12 @@
             <div class="card section" id="pairingsSection" style="display: none;">
                 <h3 class="section-title">🍽️ Suggested Pairings</h3>
                 <ul id="pairingsList" class="pairings-list"></ul>
+            </div>
+
+            <!-- Score Explanation Section -->
+            <div class="card section" id="scoreSection" style="display: none;">
+                <h3 class="section-title">📊 Score Explanation</h3>
+                <p id="scoreExplanation"></p>
             </div>
 
         </div>

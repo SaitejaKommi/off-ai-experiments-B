@@ -1,0 +1,49 @@
+flowchart TB
+    U[User on Open Food Facts Product Page]
+    E[Browser Extension Popup UI]
+    BG[Background Service Worker\nlatest_barcode in chrome.storage.local]
+
+    subgraph B[Backend]
+        API[FastAPI Service\nPOST /product-insights]
+        F[Product Fetcher\nfetch_product(barcode)]
+        D[DuckDB Data Layer\npersistent off.duckdb connection]
+        V[products View\nCanada-only filtering]
+        A[Insight Engine\nrisk and positive indicators]
+        R[Recommendation Engine\nweighted nutrition ranking]
+        L[LLM Layer\nGroq Llama 3.3 70B\nsummary + score explanation + pairings]
+        C[Response Composer\nstructured JSON response]
+    end
+
+    P[(OFF Parquet Dataset\noff_dev.parquet / food.parquet)]
+
+    U --> E
+    E --> BG
+    E --> API
+
+    API --> F
+    F --> D
+    D --> V
+    V --> P
+
+    API --> A
+    API --> R
+    API --> L
+
+    F --> A
+    F --> R
+    F --> L
+
+    A --> C
+    R --> C
+    L --> C
+
+    C --> API
+    API --> E
+
+    classDef ext fill:#f8fafc,stroke:#334155,color:#0f172a
+    classDef backend fill:#eef2ff,stroke:#3730a3,color:#1e1b4b
+    classDef data fill:#ecfeff,stroke:#0e7490,color:#083344
+
+    class U,E,BG ext
+    class API,F,A,R,L,C backend
+    class D,V,P data

@@ -1,24 +1,11 @@
-"""Suggest healthier product alternatives using the Open Food Facts search API."""
+"""Suggest healthier product alternatives from the local Canada OFF dataset."""
 
-import json
-import urllib.parse
-import urllib.request
 from typing import Any
 
+from product_insights.data_store import build_nutriments_from_row, fetch_all
 from utils.product_helpers import normalise_grade, extract_nutriment, safe_int
 
 _GRADE_ORDER = {"a": 0, "b": 1, "c": 2, "d": 3, "e": 4}
-
-# V2 search API is more reliable and faster than the CGI endpoint
-_SEARCH_URL_V2 = (
-    "https://world.openfoodfacts.org/api/v2/search"
-    "?categories_tags={category}"
-    "&fields=product_name,nutriscore_grade,nova_group,nutriments,categories_tags,url,unique_scans_n"
-    "&page_size=50"
-    "&sort_by=unique_scans_n"
-)
-
-_SEARCH_CACHE: dict[str, list[dict[str, Any]]] = {}
 
 _NUTRIENT_WEIGHTS = {
     "sugars": 0.30,
@@ -71,6 +58,15 @@ def _get_parent_categories(categories_tags: list, max_depth: int = 3) -> list[st
     return slugs
 
 
+def _get_parent_category_tags(categories_tags: list, max_depth: int = 3) -> list[str]:
+    """Return up to ``max_depth`` exact category tags from specific to broader."""
+    if not categories_tags:
+        return []
+
+    relevant = categories_tags[-max_depth:]
+    return [tag for tag in reversed(relevant) if isinstance(tag, str) and ":" in tag]
+
+
 def _is_category_match(product_categories: list, search_categories: list[str]) -> bool:
     """Check if a product belongs to any searched category slug."""
     if not search_categories:
@@ -85,27 +81,64 @@ def _is_category_match(product_categories: list, search_categories: list[str]) -
     return False
 
 
-def _fetch_candidates_for_category(category_slug: str) -> list[dict[str, Any]]:
-    """Fetch candidate products using v2 API with caching and error handling."""
-    if category_slug in _SEARCH_CACHE:
-        return _SEARCH_CACHE[category_slug]
+def _fetch_candidates_for_categories(
+    category_tags: list[str],
+    exclude_barcode: str,
+    candidate_limit: int,
+) -> list[dict[str, Any]]:
+    """Fetch candidate products from the DuckDB ``products`` view."""
+    if not category_tags:
+        return []
 
-    url = _SEARCH_URL_V2.format(category=urllib.parse.quote(category_slug))
+    return fetch_all(
+        """
+        SELECT
+            code,
+            product_name,
+            product_url AS url,
+            categories_tags,
+            nutriscore_grade,
+            nova_group,
+            energy_kcal_100g,
+            sugars_100g,
+            proteins_100g,
+            fat_100g,
+            salt_100g,
+            fiber_100g
+        FROM products
+        WHERE code <> ?
+          AND product_name IS NOT NULL
+          AND list_has_any(categories_tags, ?)
+        ORDER BY
+          CASE nutriscore_grade
+            WHEN 'a' THEN 0
+            WHEN 'b' THEN 1
+            WHEN 'c' THEN 2
+            WHEN 'd' THEN 3
+            WHEN 'e' THEN 4
+            ELSE 5
+          END,
+          coalesce(proteins_100g, 0) DESC,
+          coalesce(fiber_100g, 0) DESC,
+          coalesce(sugars_100g, 9999) ASC,
+          coalesce(salt_100g, 9999) ASC
+        LIMIT ?
+        """,
+        [exclude_barcode, category_tags, candidate_limit],
+    )
 
-    # Retry transient network failures. Do not cache failures as empty lists.
-    for _ in range(2):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "off-ai-experiments-B/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as response:
-                data = json.loads(response.read().decode())
 
-            products = data.get("products", [])
-            _SEARCH_CACHE[category_slug] = products
-            return products
-        except Exception:
-            continue
-
-    return []
+def _row_to_candidate(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert a DuckDB row into the candidate shape used by scoring."""
+    return {
+        "code": row.get("code"),
+        "product_name": row.get("product_name"),
+        "categories_tags": row.get("categories_tags") or [],
+        "nutriscore_grade": row.get("nutriscore_grade"),
+        "nova_group": row.get("nova_group"),
+        "nutriments": build_nutriments_from_row(row),
+        "url": row.get("url") or "",
+    }
 
 
 def _extract_metrics(nutriments: dict) -> dict[str, float]:
@@ -302,29 +335,29 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
     current_rank = _grade_rank(current_grade)
     current_nova = safe_int(product.get("nova_group"), 0)
 
-    # Use multiple category levels to avoid empty result sets in sparse categories.
     categories_tags = product.get("categories_tags", [])
     category_slugs = _get_parent_categories(categories_tags, max_depth=3)
+    category_tags = _get_parent_category_tags(categories_tags, max_depth=3)
 
-    if not category_slugs:
+    if not category_slugs or not category_tags:
         return []
 
-    candidate_products: list[dict] = []
-    for slug in category_slugs:
-        candidates = _fetch_candidates_for_category(slug)
-        if candidates:
-            candidate_products.extend(candidates)
+    candidate_rows = _fetch_candidates_for_categories(
+        category_tags=category_tags,
+        exclude_barcode=product.get("_barcode") or product.get("code") or "",
+        candidate_limit=max(150, max_results * 80),
+    )
+    candidate_products = [_row_to_candidate(row) for row in candidate_rows]
 
     if not candidate_products:
         return []
 
-    # De-duplicate candidates fetched across category levels.
     deduped_candidates: list[dict] = []
     seen_keys: set[tuple[str, str]] = set()
     for item in candidate_products:
         key = (
+            (item.get("code") or "").strip().lower(),
             (item.get("product_name") or "").strip().lower(),
-            (item.get("url") or "").strip().lower(),
         )
         if key in seen_keys:
             continue
@@ -415,7 +448,6 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
             }
         )
 
-    # Prefer strict healthier options first. If none exist, return fallback discovery options.
     better = [item for item in alternatives if item.get("is_better")]
     fallback = [item for item in alternatives if not item.get("is_better")]
 
@@ -424,7 +456,6 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
 
     selected = better[:max_results] if better else fallback[:max_results]
 
-    # Remove internal helper key before returning API response.
     for item in selected:
         item.pop("is_better", None)
 

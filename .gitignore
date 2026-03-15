@@ -30,3 +30,8 @@ htmlcov/
 .idea/
 *.swp
 *.swo
+
+# Data files
+*.duckdb
+*.duckdb.wal
+*.parquet
