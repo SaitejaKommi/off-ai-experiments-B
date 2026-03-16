@@ -30,6 +30,9 @@ from product_insights.score_explainer import explain_nutriscore, explain_nova, e
 from product_insights.summary import generate
 from product_insights.pairings import get_pairings
 from product_insights.fetcher import _barcode_from_url
+from product_insights.recommender import get_alternatives
+from product_insights.off_config import OFF_COUNTRY_TAG, normalise_off_product_url
+from product_insights.data_store import row_to_product
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +214,7 @@ class TestExplainNutriscore:
         assert (
             "NutriScore A" in text
             or "nutriscore grade of a" in text.lower()
+            or "an a nutriscore grade" in text.lower()
             or "nutriscore of a" in text.lower()
             or "a grade on the nutriscore" in text.lower()
         )
@@ -315,3 +319,180 @@ class TestBarcodeFromUrl:
     def test_raises_on_invalid_url(self):
         with pytest.raises(ValueError):
             _barcode_from_url("https://example.com/no-barcode-here")
+
+
+class TestOffUrlNormalization:
+    def test_preserves_slug_when_switching_to_canada_domain(self):
+        url = "https://world.openfoodfacts.org/product/0627843538424/powdered-peanut-butter-pb-me"
+        normalised = normalise_off_product_url(
+            url,
+            "0627843538424",
+            "Powdered Peanut Butter",
+        )
+        assert normalised == "https://ca.openfoodfacts.org/product/0627843538424/powdered-peanut-butter-pb-me"
+
+    def test_builds_slug_when_url_only_has_barcode(self):
+        normalised = normalise_off_product_url(
+            "https://ca.openfoodfacts.org/product/0627843538424/",
+            "0627843538424",
+            "Powdered Peanut Butter",
+        )
+        assert normalised == (
+            "https://ca.openfoodfacts.org/cgi/search.pl?"
+            "search_terms=0627843538424&search_simple=1&action=process"
+        )
+
+    def test_row_to_product_normalises_link_to_slugged_canada_url(self):
+        product = row_to_product(
+            {
+                "code": "0627843538424",
+                "product_name": "Powdered Peanut Butter",
+                "product_url": "https://world.openfoodfacts.org/product/0627843538424/powdered-peanut-butter-pb-me",
+                "countries_tags": [OFF_COUNTRY_TAG],
+                "categories_tags": ["en:nut-butters"],
+                "labels_tags": [],
+                "additives_tags": [],
+                "allergens_tags": [],
+                "ingredients_analysis_tags": [],
+                "packaging_tags": [],
+            }
+        )
+        assert product["link"].startswith("https://ca.openfoodfacts.org/product/0627843538424/")
+        assert "world.openfoodfacts.org" not in product["link"]
+
+
+# ---------------------------------------------------------------------------
+# product_insights.recommender (Canada filtering + URL domain)
+# ---------------------------------------------------------------------------
+
+class TestAlternativesCanadaDomain:
+    @staticmethod
+    def _current_product() -> dict:
+        return {
+            "_barcode": "000111222333",
+            "code": "000111222333",
+            "product_name": "Current Product",
+            "nutriscore_grade": "d",
+            "nova_group": 4,
+            "categories_tags": ["en:spreads", "en:nut-butters"],
+            "nutriments": {
+                "sugars_100g": 10.0,
+                "fat_100g": 20.0,
+                "salt_100g": 1.0,
+                "proteins_100g": 6.0,
+                "fiber_100g": 2.0,
+            },
+        }
+
+    def test_prefers_canada_candidates_when_available(self, monkeypatch):
+        canada_row = {
+            "code": "1234567890123",
+            "product_name": "Canada Alt",
+            "url": "https://ca.openfoodfacts.org/product/1234567890123/",
+            "categories_tags": ["en:nut-butters"],
+            "countries_tags": [OFF_COUNTRY_TAG],
+            "nutriscore_grade": "b",
+            "nova_group": 2,
+            "energy_kcal_100g": 430.0,
+            "sugars_100g": 5.0,
+            "proteins_100g": 9.0,
+            "fat_100g": 15.0,
+            "salt_100g": 0.4,
+            "fiber_100g": 5.0,
+        }
+        non_canada_row = {
+            "code": "9999999999999",
+            "product_name": "World Alt",
+            "url": "https://world.openfoodfacts.org/product/9999999999999/",
+            "categories_tags": ["en:nut-butters"],
+            "countries_tags": ["en:france"],
+            "nutriscore_grade": "a",
+            "nova_group": 1,
+            "energy_kcal_100g": 400.0,
+            "sugars_100g": 4.0,
+            "proteins_100g": 10.0,
+            "fat_100g": 14.0,
+            "salt_100g": 0.3,
+            "fiber_100g": 6.0,
+        }
+
+        def fake_fetch(category_tags, exclude_barcode, candidate_limit, canada_only, source_view="products_all"):
+            if canada_only:
+                return [canada_row]
+            return [non_canada_row]
+
+        monkeypatch.setattr(
+            "product_insights.recommender._fetch_candidates_for_categories",
+            fake_fetch,
+        )
+
+        alternatives = get_alternatives(self._current_product(), max_results=1)
+        assert len(alternatives) == 1
+        assert alternatives[0]["name"] == "Canada Alt"
+        assert alternatives[0]["url"].startswith("https://ca.openfoodfacts.org")
+        assert "world.openfoodfacts.org" not in alternatives[0]["url"]
+
+    def test_fallback_still_uses_canada_domain_urls(self, monkeypatch):
+        fallback_world_row = {
+            "code": "1111111111111",
+            "product_name": "Fallback Alt",
+            "url": "https://world.openfoodfacts.org/product/1111111111111/",
+            "categories_tags": ["en:nut-butters"],
+            "countries_tags": ["en:france"],
+            "nutriscore_grade": "c",
+            "nova_group": 3,
+            "energy_kcal_100g": 450.0,
+            "sugars_100g": 7.0,
+            "proteins_100g": 8.0,
+            "fat_100g": 17.0,
+            "salt_100g": 0.6,
+            "fiber_100g": 4.0,
+        }
+
+        def fake_fetch(category_tags, exclude_barcode, candidate_limit, canada_only, source_view="products_all"):
+            if canada_only:
+                return []
+            return [fallback_world_row]
+
+        monkeypatch.setattr(
+            "product_insights.recommender._fetch_candidates_for_categories",
+            fake_fetch,
+        )
+
+        alternatives = get_alternatives(self._current_product(), max_results=1)
+        assert len(alternatives) == 1
+        assert alternatives[0]["url"].startswith(
+            "https://ca.openfoodfacts.org/cgi/search.pl?search_terms=1111111111111"
+        )
+        assert "world.openfoodfacts.org" not in alternatives[0]["url"]
+
+    def test_fallback_preserves_slug_when_source_url_is_world(self, monkeypatch):
+        fallback_world_row = {
+            "code": "0627843538424",
+            "product_name": "Powdered Peanut Butter",
+            "url": "https://world.openfoodfacts.org/product/0627843538424/powdered-peanut-butter-pb-me",
+            "categories_tags": ["en:nut-butters"],
+            "countries_tags": ["en:france"],
+            "nutriscore_grade": "c",
+            "nova_group": 3,
+            "energy_kcal_100g": 450.0,
+            "sugars_100g": 7.0,
+            "proteins_100g": 8.0,
+            "fat_100g": 17.0,
+            "salt_100g": 0.6,
+            "fiber_100g": 4.0,
+        }
+
+        def fake_fetch(category_tags, exclude_barcode, candidate_limit, canada_only, source_view="products_all"):
+            if canada_only:
+                return []
+            return [fallback_world_row]
+
+        monkeypatch.setattr(
+            "product_insights.recommender._fetch_candidates_for_categories",
+            fake_fetch,
+        )
+
+        alternatives = get_alternatives(self._current_product(), max_results=1)
+        assert len(alternatives) == 1
+        assert alternatives[0]["url"] == "https://ca.openfoodfacts.org/product/0627843538424/powdered-peanut-butter-pb-me"
