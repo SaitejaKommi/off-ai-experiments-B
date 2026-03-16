@@ -9,6 +9,13 @@ from typing import Any, Iterable
 
 import duckdb
 
+from product_insights.off_config import (
+    BASE_OFF_URL,
+    OFF_COUNTRY_TAG,
+    OFF_INSTANCE_DOMAIN,
+    normalise_off_product_url,
+)
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DATASET_ENV = "OFF_PARQUET_PATH"
 _DB_PATH_ENV = "OFF_DUCKDB_PATH"
@@ -55,6 +62,17 @@ def _sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def _product_url_sql() -> str:
+    return f"concat({_sql_literal(BASE_OFF_URL)}, code, '/')"
+
+
+def _normalised_product_url_sql(column_name: str = "product_url") -> str:
+    return (
+        f"regexp_replace(coalesce({column_name}, {_sql_literal('')}), '^https?://[^/]+', "
+        f"{_sql_literal(OFF_INSTANCE_DOMAIN)})"
+    )
+
+
 def _resolve_dataset_path() -> Path:
     configured_path = os.getenv(_DATASET_ENV)
     if configured_path:
@@ -96,6 +114,7 @@ def _get_dataset_columns(dataset_path: Path) -> set[str]:
 
 def _build_raw_products_select_sql(dataset_path: Path) -> str:
     source = _sql_literal(str(dataset_path))
+    product_url_expr = _product_url_sql()
     return f"""
 SELECT
     code,
@@ -120,7 +139,7 @@ SELECT
         ingredients_text[1].text,
         ingredients
     ) AS ingredients_text,
-    concat('https://ca.openfoodfacts.org/product/', code, '/') AS product_url,
+    {product_url_expr} AS product_url,
     CAST(NULL AS VARCHAR) AS image_url,
     serving_size,
     try_cast(serving_quantity AS DOUBLE) AS serving_quantity,
@@ -136,15 +155,20 @@ SELECT
     list_filter(nutriments, item -> item.name = 'saturated-fat')[1]."100g" AS saturated_fat_100g,
     list_filter(nutriments, item -> item.name = 'carbohydrates')[1]."100g" AS carbohydrates_100g
 FROM read_parquet({source})
-WHERE list_contains(countries_tags, 'en:canada')
-  AND code IS NOT NULL
+WHERE code IS NOT NULL
 """.strip()
 
 
-def build_products_select_sql(dataset_path: str | Path) -> str:
+def build_products_select_sql(dataset_path: str | Path, canada_only: bool = True) -> str:
     """Build the canonical SELECT used for the products view."""
     path = Path(dataset_path).expanduser().resolve()
     columns = _get_dataset_columns(path)
+    product_url_expr = _product_url_sql()
+    country_filter = (
+        f"AND list_contains(countries_tags, {_sql_literal(OFF_COUNTRY_TAG)})"
+        if canada_only
+        else ""
+    )
 
     if _NORMALIZED_REQUIRED_COLUMNS.issubset(columns):
         source = _sql_literal(str(path))
@@ -152,12 +176,18 @@ def build_products_select_sql(dataset_path: str | Path) -> str:
         return f"""
 SELECT
     * REPLACE (
-        concat('https://ca.openfoodfacts.org/product/', code, '/') AS product_url
+        { _normalised_product_url_sql() } AS product_url
     )
 FROM read_parquet({source})
-WHERE list_contains(countries_tags, 'en:canada')
-  AND code IS NOT NULL
+WHERE code IS NOT NULL
+  {country_filter}
 """.strip()
+
+    if canada_only:
+        return (
+            _build_raw_products_select_sql(path)
+            + f"\n  AND list_contains(countries_tags, {_sql_literal(OFF_COUNTRY_TAG)})"
+        )
 
     return _build_raw_products_select_sql(path)
 
@@ -175,9 +205,11 @@ def _ensure_connection() -> duckdb.DuckDBPyConnection:
         _CONNECTION = _connect()
         _CONNECTION.execute("PRAGMA threads=4")
 
-    # Always rebuild view to ensure URL generation is up-to-date
-    select_sql = build_products_select_sql(dataset_path)
-    _CONNECTION.execute(f"CREATE OR REPLACE VIEW products AS {select_sql}")
+    # Always rebuild views to ensure URL generation/domain and filters stay up-to-date.
+    select_sql_all = build_products_select_sql(dataset_path, canada_only=False)
+    select_sql_canada = build_products_select_sql(dataset_path, canada_only=True)
+    _CONNECTION.execute(f"CREATE OR REPLACE VIEW products_all AS {select_sql_all}")
+    _CONNECTION.execute(f"CREATE OR REPLACE VIEW products AS {select_sql_canada}")
     _INITIALIZED_DATASET = dataset_path
 
     return _CONNECTION
@@ -254,7 +286,11 @@ def row_to_product(row: dict[str, Any]) -> dict[str, Any]:
         "additives_tags": _as_list(row.get("additives_tags")),
         "allergens_tags": _as_list(row.get("allergens_tags")),
         "image_url": row.get("image_url"),
-        "link": row.get("product_url") or "",
+        "link": normalise_off_product_url(
+            row.get("product_url"),
+            barcode,
+            row.get("product_name"),
+        ),
         "serving_size": row.get("serving_size"),
         "serving_quantity": row.get("serving_quantity"),
         "packaging": row.get("packaging"),

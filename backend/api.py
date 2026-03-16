@@ -16,6 +16,7 @@ from product_insights.summary import generate
 from product_insights.score_explainer import explain
 from product_insights.recommender import get_alternatives
 from product_insights.pairings import get_pairings
+from product_insights.off_config import OFF_INSTANCE_DOMAIN
 from backend.models import (
     ProductInsightsRequest,
     ProductInsightsResponse,
@@ -113,6 +114,7 @@ def root():
     return {
         "name": "AI Product Insights API",
         "version": "1.0.0",
+        "off_instance_domain": OFF_INSTANCE_DOMAIN,
         "endpoints": {
             "health": "/health",
             "product_insights": "/product-insights",

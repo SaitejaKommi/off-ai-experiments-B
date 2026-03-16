@@ -3,6 +3,7 @@
 from typing import Any
 
 from product_insights.data_store import build_nutriments_from_row, fetch_all
+from product_insights.off_config import OFF_COUNTRY_TAG, normalise_off_product_url
 from utils.product_helpers import normalise_grade, extract_nutriment, safe_int
 
 _GRADE_ORDER = {"a": 0, "b": 1, "c": 2, "d": 3, "e": 4}
@@ -85,18 +86,29 @@ def _fetch_candidates_for_categories(
     category_tags: list[str],
     exclude_barcode: str,
     candidate_limit: int,
+    canada_only: bool,
+    source_view: str = "products_all",
 ) -> list[dict[str, Any]]:
     """Fetch candidate products from the DuckDB ``products`` view."""
     if not category_tags:
         return []
 
+    view_name = "products" if source_view == "products" else "products_all"
+
+    canada_filter = "AND list_contains(countries_tags, ?)" if canada_only else ""
+    params: list[Any] = [exclude_barcode, category_tags]
+    if canada_only:
+        params.append(OFF_COUNTRY_TAG)
+    params.append(candidate_limit)
+
     return fetch_all(
-        """
+        f"""
         SELECT
             code,
             product_name,
             product_url AS url,
             categories_tags,
+            countries_tags,
             nutriscore_grade,
             nova_group,
             energy_kcal_100g,
@@ -105,10 +117,11 @@ def _fetch_candidates_for_categories(
             fat_100g,
             salt_100g,
             fiber_100g
-        FROM products
+        FROM {view_name}
         WHERE code <> ?
           AND product_name IS NOT NULL
           AND list_has_any(categories_tags, ?)
+                    {canada_filter}
         ORDER BY
           CASE nutriscore_grade
             WHEN 'a' THEN 0
@@ -124,20 +137,28 @@ def _fetch_candidates_for_categories(
           coalesce(salt_100g, 9999) ASC
         LIMIT ?
         """,
-        [exclude_barcode, category_tags, candidate_limit],
+        params,
     )
+
+
+def _is_canadian_product(countries_tags: list[str]) -> bool:
+    tags = [str(tag).lower() for tag in (countries_tags or [])]
+    return OFF_COUNTRY_TAG in tags or any("canada" in tag for tag in tags)
 
 
 def _row_to_candidate(row: dict[str, Any]) -> dict[str, Any]:
     """Convert a DuckDB row into the candidate shape used by scoring."""
+    code = row.get("code") or ""
+    product_name = row.get("product_name")
     return {
-        "code": row.get("code"),
-        "product_name": row.get("product_name"),
+        "code": code,
+        "product_name": product_name,
         "categories_tags": row.get("categories_tags") or [],
+        "countries_tags": row.get("countries_tags") or [],
         "nutriscore_grade": row.get("nutriscore_grade"),
         "nova_group": row.get("nova_group"),
         "nutriments": build_nutriments_from_row(row),
-        "url": row.get("url") or "",
+        "url": normalise_off_product_url(row.get("url") or "", str(code), product_name),
     }
 
 
@@ -342,11 +363,24 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
     if not category_slugs or not category_tags:
         return []
 
-    candidate_rows = _fetch_candidates_for_categories(
+    candidate_limit = max(150, max_results * 80)
+
+    candidate_rows_ca = _fetch_candidates_for_categories(
         category_tags=category_tags,
         exclude_barcode=product.get("_barcode") or product.get("code") or "",
-        candidate_limit=max(150, max_results * 80),
+        candidate_limit=candidate_limit,
+        canada_only=True,
+        source_view="products",
     )
+
+    candidate_rows_fallback = _fetch_candidates_for_categories(
+        category_tags=category_tags,
+        exclude_barcode=product.get("_barcode") or product.get("code") or "",
+        candidate_limit=candidate_limit,
+        canada_only=False,
+        source_view="products_all",
+    )
+    candidate_rows = candidate_rows_ca + candidate_rows_fallback
     candidate_products = [_row_to_candidate(row) for row in candidate_rows]
 
     if not candidate_products:
@@ -444,6 +478,7 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
                 "score": score,
                 "confidence": confidence,
                 "url": item.get("url", ""),
+                "is_canadian": _is_canadian_product(item.get("countries_tags", [])),
                 "is_better": is_strictly_better,
             }
         )
@@ -454,9 +489,22 @@ def get_alternatives(product: dict, max_results: int = 5) -> list[dict]:
     better.sort(key=lambda item: item.get("score", 0), reverse=True)
     fallback.sort(key=lambda item: item.get("score", 0), reverse=True)
 
-    selected = better[:max_results] if better else fallback[:max_results]
+    better_ca = [item for item in better if item.get("is_canadian")]
+    better_non_ca = [item for item in better if not item.get("is_canadian")]
+    fallback_ca = [item for item in fallback if item.get("is_canadian")]
+    fallback_non_ca = [item for item in fallback if not item.get("is_canadian")]
+
+    if better_ca:
+        selected = (better_ca + better_non_ca)[:max_results]
+    elif better:
+        selected = better[:max_results]
+    elif fallback_ca:
+        selected = (fallback_ca + fallback_non_ca)[:max_results]
+    else:
+        selected = fallback[:max_results]
 
     for item in selected:
         item.pop("is_better", None)
+        item.pop("is_canadian", None)
 
     return selected
