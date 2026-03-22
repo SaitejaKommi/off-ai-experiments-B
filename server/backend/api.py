@@ -7,17 +7,17 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-# Add parent directory to path so we can import product_insights
+# Add parent directory to path so server package imports resolve in direct execution.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from product_insights.fetcher import fetch_product
-from product_insights.insight_engine import analyse
-from product_insights.summary import generate
-from product_insights.score_explainer import explain
-from product_insights.recommender import get_alternatives
-from product_insights.pairings import get_pairings
-from product_insights.off_config import OFF_INSTANCE_DOMAIN
-from backend.models import (
+from server.product_insights.fetcher import fetch_product
+from server.product_insights.insight_engine import analyse
+from server.product_insights.summary import generate
+from server.product_insights.score_explainer import explain
+from server.product_insights.recommender import get_alternatives
+from server.product_insights.pairings import get_pairings
+from server.product_insights.off_config import OFF_INSTANCE_DOMAIN
+from server.backend.models import (
     ProductInsightsRequest,
     ProductInsightsResponse,
     ProductData,

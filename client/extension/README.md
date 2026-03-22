@@ -23,23 +23,23 @@ A Chrome/Firefox extension that shows AI insights for Open Food Facts products i
 
 1. Start backend API on `http://localhost:8000`:
    ```bash
-   python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
+   python -m uvicorn server.backend.api:app --host 127.0.0.1 --port 8000
    ```
-2. See `../backend/README.md` for backend setup details.
+2. See `../../server/backend/README.md` for backend setup details.
 
 ### Load Extension in Chrome
 
 1. Open `chrome://extensions/`
 2. Enable Developer mode
 3. Click Load unpacked
-4. Select the `extension/` folder
+4. Select the `client/extension/` folder
 
 ### Load Extension in Firefox
 
 1. Open `about:debugging`
 2. Click This Firefox
 3. Click Load Temporary Add-on
-4. Select any file in the `extension/` folder
+4. Select any file in the `client/extension/` folder
 
 ## Usage
 
@@ -53,7 +53,7 @@ If the current tab is not a product URL, popup shows an empty state.
 ## Current File Structure
 
 ```
-extension/
+client/extension/
 ├── manifest.json
 ├── background/
 │   └── background.js

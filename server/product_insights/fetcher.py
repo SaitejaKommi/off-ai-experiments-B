@@ -1,6 +1,6 @@
 """Fetch product data from the local DuckDB-backed OFF dataset."""
 
-from product_insights.data_store import fetch_one, row_to_product
+from server.product_insights.data_store import fetch_one, row_to_product
 
 
 def _barcode_from_url(url: str) -> str:

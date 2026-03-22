@@ -10,10 +10,10 @@ Current defaults:
 
 ## What Uses the LLM
 
-- `product_insights/summary.py` → Product summary
-- `product_insights/score_explainer.py` → NutriScore and NOVA explanations
-- `product_insights/pairings.py` → Suggested pairings
-- `product_insights/insight_engine.py` → Extra contextual positives
+- `server/product_insights/summary.py` → Product summary
+- `server/product_insights/score_explainer.py` → NutriScore and NOVA explanations
+- `server/product_insights/pairings.py` → Suggested pairings
+- `server/product_insights/insight_engine.py` → Extra contextual positives
 
 If LLM fallback is enabled (`LLM_FALLBACK_TO_RULES=true`), rule-based text is used when LLM is unavailable.
 
@@ -59,7 +59,7 @@ LLM_FALLBACK_TO_RULES=false
 ## Verify Configuration
 
 ```bash
-python -c "from product_insights.llm_config import LLMConfig; print(LLMConfig.get_status())"
+python -c "from server.product_insights.llm_config import LLMConfig; print(LLMConfig.get_status())"
 ```
 
 Expected examples:
@@ -69,8 +69,8 @@ Expected examples:
 ## Test End-to-End
 
 ```bash
-python -m product_insights.cli 0068100084245
-python -m product_insights.cli 0068100084245 --scores
+python -m server.product_insights.cli 0068100084245
+python -m server.product_insights.cli 0068100084245 --scores
 ```
 
 ## Provider Notes

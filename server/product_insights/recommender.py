@@ -2,9 +2,9 @@
 
 from typing import Any
 
-from product_insights.data_store import build_nutriments_from_row, fetch_all
-from product_insights.off_config import OFF_COUNTRY_TAG, normalise_off_product_url
-from utils.product_helpers import normalise_grade, extract_nutriment, safe_int
+from server.product_insights.data_store import build_nutriments_from_row, fetch_all
+from server.product_insights.off_config import OFF_COUNTRY_TAG, normalise_off_product_url
+from server.utils.product_helpers import normalise_grade, extract_nutriment, safe_int
 
 _GRADE_ORDER = {"a": 0, "b": 1, "c": 2, "d": 3, "e": 4}
 

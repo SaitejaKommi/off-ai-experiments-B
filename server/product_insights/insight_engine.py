@@ -1,6 +1,6 @@
 """Analyse a product and produce risk and positive indicators."""
 
-from utils.nutrition_rules import (
+from server.utils.nutrition_rules import (
     FAT_HIGH,
     SUGAR_HIGH,
     SALT_HIGH,
@@ -10,10 +10,10 @@ from utils.nutrition_rules import (
     CALORIES_HIGH,
     NOVA_ULTRA_PROCESSED,
 )
-from utils.product_helpers import extract_nutriment, safe_int, normalise_grade
+from server.utils.product_helpers import extract_nutriment, safe_int, normalise_grade
 
 try:
-    from product_insights.llm_client import get_llm_client
+    from server.product_insights.llm_client import get_llm_client
 except ImportError:
     get_llm_client = None
 

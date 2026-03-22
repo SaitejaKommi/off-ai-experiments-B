@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from utils.product_helpers import (
+from server.utils.product_helpers import (
     safe_float,
     safe_int,
     extract_nutriment,
@@ -17,7 +17,7 @@ from utils.product_helpers import (
     normalise_grade,
     category_slug,
 )
-from utils.nutrition_rules import (
+from server.utils.nutrition_rules import (
     FAT_HIGH,
     SUGAR_HIGH,
     NOVA_ULTRA_PROCESSED,
@@ -25,14 +25,14 @@ from utils.nutrition_rules import (
     NOVA_DESCRIPTIONS,
     CATEGORY_PAIRINGS,
 )
-from product_insights.insight_engine import analyse
-from product_insights.score_explainer import explain_nutriscore, explain_nova, explain
-from product_insights.summary import generate
-from product_insights.pairings import get_pairings
-from product_insights.fetcher import _barcode_from_url
-from product_insights.recommender import get_alternatives
-from product_insights.off_config import OFF_COUNTRY_TAG, normalise_off_product_url
-from product_insights.data_store import row_to_product
+from server.product_insights.insight_engine import analyse
+from server.product_insights.score_explainer import explain_nutriscore, explain_nova, explain
+from server.product_insights.summary import generate
+from server.product_insights.pairings import get_pairings
+from server.product_insights.fetcher import _barcode_from_url
+from server.product_insights.recommender import get_alternatives
+from server.product_insights.off_config import OFF_COUNTRY_TAG, normalise_off_product_url
+from server.product_insights.data_store import row_to_product
 
 
 # ---------------------------------------------------------------------------
@@ -422,7 +422,7 @@ class TestAlternativesCanadaDomain:
             return [non_canada_row]
 
         monkeypatch.setattr(
-            "product_insights.recommender._fetch_candidates_for_categories",
+            "server.product_insights.recommender._fetch_candidates_for_categories",
             fake_fetch,
         )
 
@@ -455,7 +455,7 @@ class TestAlternativesCanadaDomain:
             return [fallback_world_row]
 
         monkeypatch.setattr(
-            "product_insights.recommender._fetch_candidates_for_categories",
+            "server.product_insights.recommender._fetch_candidates_for_categories",
             fake_fetch,
         )
 
@@ -489,7 +489,7 @@ class TestAlternativesCanadaDomain:
             return [fallback_world_row]
 
         monkeypatch.setattr(
-            "product_insights.recommender._fetch_candidates_for_categories",
+            "server.product_insights.recommender._fetch_candidates_for_categories",
             fake_fetch,
         )
 

@@ -21,29 +21,29 @@ The solution supports two user experiences:
 ## 2. What We Built (Full Process)
 
 ### Phase 1: Core Analysis Engine
-- Implemented reusable modules under [product_insights/](product_insights/):
-  - [product_insights/fetcher.py](product_insights/fetcher.py): resolves barcode or OFF URL and fetches the matching product.
-  - [product_insights/insight_engine.py](product_insights/insight_engine.py): computes rule-based risk and positive indicators with optional LLM contextual additions.
-  - [product_insights/summary.py](product_insights/summary.py): produces LLM-first summary with optional template fallback.
-  - [product_insights/score_explainer.py](product_insights/score_explainer.py): explains NutriScore, NOVA, and nutrient density.
-  - [product_insights/recommender.py](product_insights/recommender.py): category-aware alternatives with weighted nutrition ranking.
-  - [product_insights/pairings.py](product_insights/pairings.py): LLM-first pairings with category realism post-processing.
+- Implemented reusable modules under [server/product_insights/](server/product_insights/):
+  - [server/product_insights/fetcher.py](server/product_insights/fetcher.py): resolves barcode or OFF URL and fetches the matching product.
+  - [server/product_insights/insight_engine.py](server/product_insights/insight_engine.py): computes rule-based risk and positive indicators with optional LLM contextual additions.
+  - [server/product_insights/summary.py](server/product_insights/summary.py): produces LLM-first summary with optional template fallback.
+  - [server/product_insights/score_explainer.py](server/product_insights/score_explainer.py): explains NutriScore, NOVA, and nutrient density.
+  - [server/product_insights/recommender.py](server/product_insights/recommender.py): category-aware alternatives with weighted nutrition ranking.
+  - [server/product_insights/pairings.py](server/product_insights/pairings.py): LLM-first pairings with category realism post-processing.
 
 ### Phase 2: Data Layer Migration to DuckDB
 - Replaced direct OFF HTTP-based lookup/recommendation paths with a DuckDB-backed local data layer.
-- Added normalized DuckDB view generation in [product_insights/data_store.py](product_insights/data_store.py):
+- Added normalized DuckDB view generation in [server/product_insights/data_store.py](server/product_insights/data_store.py):
   - `products_all` view for all records.
   - `products` view filtered to Canada (`en:canada`).
 - Added robust dataset path resolution order:
   1. `OFF_PARQUET_PATH` env override.
   2. `off_dev.parquet` (repo root).
-  3. `product_insights/off_dev.parquet`.
-  4. `product_insights/food.parquet`.
-- Added URL normalization to Canada OFF instance via [product_insights/off_config.py](product_insights/off_config.py).
+  3. `server/product_insights/off_dev.parquet`.
+  4. `server/product_insights/food.parquet`.
+- Added URL normalization to Canada OFF instance via [server/product_insights/off_config.py](server/product_insights/off_config.py).
 
 ### Phase 3: LLM Integration
-- Added provider abstraction in [product_insights/llm_client.py](product_insights/llm_client.py).
-- Added environment-driven LLM config in [product_insights/llm_config.py](product_insights/llm_config.py).
+- Added provider abstraction in [server/product_insights/llm_client.py](server/product_insights/llm_client.py).
+- Added environment-driven LLM config in [server/product_insights/llm_config.py](server/product_insights/llm_config.py).
 - Supported providers:
   - Groq (default): `llama-3.3-70b-versatile`
   - Gemini (optional)
@@ -52,21 +52,21 @@ The solution supports two user experiences:
   - `LLM_FALLBACK_TO_RULES=false` keeps strict LLM-first behavior unless enabled.
 
 ### Phase 4: API Layer
-- Built FastAPI wrapper in [backend/api.py](backend/api.py):
+- Built FastAPI wrapper in [server/backend/api.py](server/backend/api.py):
   - `GET /health`
   - `POST /product-insights`
-- Added schema models in [backend/models.py](backend/models.py) for request/response structure.
+- Added schema models in [server/backend/models.py](server/backend/models.py) for request/response structure.
 - Enabled CORS for extension integration.
 
 ### Phase 5: Browser Extension Integration
-- Added extension runtime in [extension/](extension/):
-  - [extension/content/content.js](extension/content/content.js): extracts barcode from OFF product page URL.
-  - [extension/background/background.js](extension/background/background.js): stores latest barcode in `chrome.storage.local`.
-  - [extension/popup/popup.js](extension/popup/popup.js): validates active tab, calls backend API, renders UI states and insights.
-  - [extension/manifest.json](extension/manifest.json): MV3 permissions and host access.
+- Added extension runtime in [client/extension/](client/extension/):
+  - [client/extension/content/content.js](client/extension/content/content.js): extracts barcode from OFF product page URL.
+  - [client/extension/background/background.js](client/extension/background/background.js): stores latest barcode in `chrome.storage.local`.
+  - [client/extension/popup/popup.js](client/extension/popup/popup.js): validates active tab, calls backend API, renders UI states and insights.
+  - [client/extension/manifest.json](client/extension/manifest.json): MV3 permissions and host access.
 
 ### Phase 6: Quality and Validation
-- Added unit tests in [tests/test_product_insights.py](tests/test_product_insights.py):
+- Added unit tests in [server/tests/test_product_insights.py](server/tests/test_product_insights.py):
   - helper normalization/parsing.
   - rule engine checks.
   - summary/score explanations.
@@ -74,8 +74,8 @@ The solution supports two user experiences:
   - URL normalization and data transformation behavior.
 - Added setup docs in:
   - [README.md](README.md)
-  - [backend/README.md](backend/README.md)
-  - [extension/README.md](extension/README.md)
+  - [server/backend/README.md](server/backend/README.md)
+  - [client/extension/README.md](client/extension/README.md)
   - [LLM_SETUP.md](LLM_SETUP.md)
 
 ## 3. Current System Architecture
@@ -114,7 +114,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant P as Popup
-    participant A as backend/api.py
+    participant A as server/backend/api.py
     participant F as fetcher.py
     participant D as data_store.py
     participant I as insight_engine.py
@@ -169,8 +169,8 @@ sequenceDiagram
 
 ### 4.1 Data Source
 - OFF parquet dataset, typically:
-  - `product_insights/food.parquet` (full)
-  - `product_insights/off_dev.parquet` (Canada-focused development subset)
+  - `server/product_insights/food.parquet` (full)
+  - `server/product_insights/off_dev.parquet` (Canada-focused development subset)
 
 ### 4.2 Dataset Preparation Pipeline
 - Script: [scripts/create_canada_dev_dataset.py](scripts/create_canada_dev_dataset.py)
@@ -188,7 +188,7 @@ sequenceDiagram
 
 ## 5. Recommendation Logic (Prototype Behavior)
 
-In [product_insights/recommender.py](product_insights/recommender.py), alternatives are generated with these rules:
+In [server/product_insights/recommender.py](server/product_insights/recommender.py), alternatives are generated with these rules:
 - Uses most specific parent categories from OFF `categories_tags`.
 - Fetches candidate alternatives from Canada-first view (`products`), then broader fallback (`products_all`).
 - Computes weighted score over normalized nutrition deltas:
@@ -203,10 +203,10 @@ In [product_insights/recommender.py](product_insights/recommender.py), alternati
 ## 6. LLM Design
 
 ### 6.1 LLM-Touched Components
-- [product_insights/summary.py](product_insights/summary.py): concise health-oriented summary.
-- [product_insights/score_explainer.py](product_insights/score_explainer.py): NutriScore and NOVA explanation text with guardrails.
-- [product_insights/pairings.py](product_insights/pairings.py): food pairings in JSON format.
-- [product_insights/insight_engine.py](product_insights/insight_engine.py): optional additional contextual insights.
+- [server/product_insights/summary.py](server/product_insights/summary.py): concise health-oriented summary.
+- [server/product_insights/score_explainer.py](server/product_insights/score_explainer.py): NutriScore and NOVA explanation text with guardrails.
+- [server/product_insights/pairings.py](server/product_insights/pairings.py): food pairings in JSON format.
+- [server/product_insights/insight_engine.py](server/product_insights/insight_engine.py): optional additional contextual insights.
 
 ### 6.2 LLM Safety and Quality Controls
 - Prompt-level constraints for nutritional over-claims.
@@ -261,14 +261,14 @@ In [product_insights/recommender.py](product_insights/recommender.py), alternati
 1. `python -m venv .venv`
 2. Activate venv.
 3. `pip install -r requirements.txt`
-4. `python scripts/create_canada_dev_dataset.py`
+4. `python server/scripts/create_canada_dev_dataset.py`
 5. Configure `.env` for LLM provider.
-6. Start backend: `python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload`
+6. Start backend: `python -m uvicorn server.backend.api:app --host 0.0.0.0 --port 8000 --reload`
 
 ### Usage Paths
 - CLI:
-  - `python -m product_insights.cli 0068100084245`
-  - `python -m product_insights.cli 0068100084245 --scores`
+  - `python -m server.product_insights.cli 0068100084245`
+  - `python -m server.product_insights.cli 0068100084245 --scores`
 - Extension:
   - Open OFF product page.
   - Open extension popup.
@@ -276,9 +276,9 @@ In [product_insights/recommender.py](product_insights/recommender.py), alternati
 
 ## 9. Testing Strategy
 
-- Primary test suite: [tests/test_product_insights.py](tests/test_product_insights.py)
+- Primary test suite: [server/tests/test_product_insights.py](server/tests/test_product_insights.py)
 - Command:
-  - `python -m pytest tests/ -q`
+  - `python -m pytest server/tests/ -q`
 - Focus areas:
   - Numeric normalization and parsing helpers.
   - Indicator logic and threshold behavior.

@@ -3,7 +3,7 @@
 import json
 import logging
 from typing import Optional, List
-from product_insights.llm_config import LLMConfig
+from server.product_insights.llm_config import LLMConfig
 
 # Configure logging
 logger = logging.getLogger(__name__)

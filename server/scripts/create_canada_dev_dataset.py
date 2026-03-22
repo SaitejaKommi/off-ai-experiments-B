@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from product_insights.data_store import build_products_select_sql
+from server.product_insights.data_store import build_products_select_sql
 
 
 def _sql_literal(value: str) -> str:

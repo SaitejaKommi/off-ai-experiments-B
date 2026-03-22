@@ -9,7 +9,7 @@ from typing import Any, Iterable
 
 import duckdb
 
-from product_insights.off_config import (
+from server.product_insights.off_config import (
     BASE_OFF_URL,
     OFF_COUNTRY_TAG,
     OFF_INSTANCE_DOMAIN,

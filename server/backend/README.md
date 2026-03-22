@@ -4,9 +4,9 @@ FastAPI wrapper for the AI-powered product insights engine backed by DuckDB.
 
 ## Setup
 
-1. Install dependencies:
+1. Install dependencies (from project root):
 ```bash
-pip install -r ../requirements.txt
+pip install -r requirements.txt
 ```
 
 2. Set up environment variables (if using LLM features):
@@ -19,12 +19,12 @@ GOOGLE_API_KEY=your_key_here
 
 3. Prepare the Canada dataset:
 ```bash
-python scripts/create_canada_dev_dataset.py
+python server/scripts/create_canada_dev_dataset.py
 ```
 
 Optional environment variables:
 ```bash
-OFF_PARQUET_PATH=product_insights/off_dev.parquet
+OFF_PARQUET_PATH=server/product_insights/off_dev.parquet
 
 # set only if you explicitly want a file-backed DuckDB database
 OFF_DUCKDB_PATH=off.duckdb
@@ -35,13 +35,13 @@ OFF_DUCKDB_PATH=off.duckdb
 From the project root:
 
 ```bash
-python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn server.backend.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 The API will be available at `http://localhost:8000`
 
-By default the backend prefers `product_insights/off_dev.parquet` when present and
-falls back to `product_insights/food.parquet`.
+By default the backend prefers `server/product_insights/off_dev.parquet` when present and
+falls back to `server/product_insights/food.parquet`.
 
 ## API Documentation
 
@@ -102,7 +102,7 @@ curl -X POST http://localhost:8000/product-insights \
 
 ## Architecture
 
-The API is a thin wrapper around the existing `product_insights` module:
+The API is a thin wrapper around the existing `server.product_insights` module:
 
 1. **DuckDB data layer**: Opens an in-memory DuckDB connection by default and creates a `products` view over the parquet dataset
 2. **Fetcher**: Retrieves product data from the local Canada dataset

@@ -1,11 +1,11 @@
 """Generate a plain-language product summary."""
 
-from utils.product_helpers import normalise_grade, safe_int, extract_allergens, extract_nutriment
-from utils.nutrition_rules import NUTRISCORE_DESCRIPTIONS, NOVA_DESCRIPTIONS
-from product_insights.llm_config import LLMConfig
+from server.utils.product_helpers import normalise_grade, safe_int, extract_allergens, extract_nutriment
+from server.utils.nutrition_rules import NUTRISCORE_DESCRIPTIONS, NOVA_DESCRIPTIONS
+from server.product_insights.llm_config import LLMConfig
 
 try:
-    from product_insights.llm_client import get_llm_client
+    from server.product_insights.llm_client import get_llm_client
 except ImportError:
     get_llm_client = None
 

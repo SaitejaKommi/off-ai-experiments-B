@@ -1,10 +1,10 @@
 """Suggest complementary food pairings for a product."""
 
-from utils.nutrition_rules import CATEGORY_PAIRINGS
-from product_insights.llm_config import LLMConfig
+from server.utils.nutrition_rules import CATEGORY_PAIRINGS
+from server.product_insights.llm_config import LLMConfig
 
 try:
-    from product_insights.llm_client import get_llm_client
+    from server.product_insights.llm_client import get_llm_client
 except ImportError:
     get_llm_client = None
 

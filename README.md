@@ -53,23 +53,15 @@ Barcode / OFF URL
 ## Repository Structure
 
 ```text
-product_insights/
-  cli.py
-  fetcher.py
-  insight_engine.py
-  llm_client.py
-  llm_config.py
-  pairings.py
-  recommender.py
-  score_explainer.py
-  summary.py
+client/
+  extension/
 
-utils/
-  nutrition_rules.py
-  product_helpers.py
-
-tests/
-  test_product_insights.py
+server/
+  backend/
+  product_insights/
+  utils/
+  scripts/
+  tests/
 ```
 
 ## Setup (Beginner Friendly)
@@ -91,16 +83,16 @@ pip install -r requirements.txt
 3) Create the Canada development dataset
 
 ```bash
-python scripts/create_canada_dev_dataset.py
+python server/scripts/create_canada_dev_dataset.py
 ```
 
-This creates `product_insights/off_dev.parquet` with about 50k Canada products.
+This creates `server/product_insights/off_dev.parquet` with about 50k Canada products.
 
 4) Optional dataset configuration
 
 ```bash
 # default shown
-OFF_PARQUET_PATH=product_insights/off_dev.parquet
+OFF_PARQUET_PATH=server/product_insights/off_dev.parquet
 
 # optional: set only if you explicitly want a file-backed DuckDB database
 OFF_DUCKDB_PATH=off.duckdb
@@ -122,8 +114,8 @@ copy .env.example .env
 ## Run
 
 ```bash
-python -m product_insights.cli 0068100084245
-python -m product_insights.cli 0068100084245 --scores
+python -m server.product_insights.cli 0068100084245
+python -m server.product_insights.cli 0068100084245 --scores
 ```
 
 ## Validate
@@ -131,13 +123,13 @@ python -m product_insights.cli 0068100084245 --scores
 Run tests:
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest server/tests/ -q
 ```
 
 Check LLM config status:
 
 ```bash
-python -c "from product_insights.llm_config import LLMConfig; print(LLMConfig.get_status())"
+python -c "from server.product_insights.llm_config import LLMConfig; print(LLMConfig.get_status())"
 ```
 
 ## Security Notes
@@ -159,4 +151,4 @@ python -c "from product_insights.llm_config import LLMConfig; print(LLMConfig.ge
 - Set `OFF_DUCKDB_PATH` only if you explicitly want a file-backed DuckDB database.
 - The `products` view is created once per configured dataset path.
 - All product fetch and alternatives queries read from `products`.
-- If `product_insights/off_dev.parquet` exists it is preferred over the full `food.parquet` file.
+- If `server/product_insights/off_dev.parquet` exists it is preferred over the full `food.parquet` file.

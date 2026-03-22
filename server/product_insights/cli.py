@@ -3,12 +3,12 @@
 import argparse
 import sys
 
-from product_insights.fetcher import fetch_product
-from product_insights.insight_engine import analyse
-from product_insights.score_explainer import explain
-from product_insights.summary import generate
-from product_insights.recommender import get_alternatives
-from product_insights.pairings import get_pairings
+from server.product_insights.fetcher import fetch_product
+from server.product_insights.insight_engine import analyse
+from server.product_insights.score_explainer import explain
+from server.product_insights.summary import generate
+from server.product_insights.recommender import get_alternatives
+from server.product_insights.pairings import get_pairings
 
 
 def _section(title: str) -> str:
@@ -82,7 +82,7 @@ def run(barcode_or_url: str, show_scores: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="python -m product_insights.cli",
+        prog="python -m server.product_insights.cli",
         description="Product Intelligence Engine – powered by Open Food Facts",
     )
     parser.add_argument(
